@@ -1,0 +1,1 @@
+- [EntreComp level system](entrecomp-levels.md) — EC uses Foundation/Intermediate/Advanced; shared LEVEL_ORDER maps them to same numeric values (1/2/3) as Developing/Consolidating/Leading so border/style logic works across all lenses.

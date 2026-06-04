@@ -1,0 +1,778 @@
+openapi: 3.1.0
+info:
+  title: Api
+  version: 0.1.0
+  description: SAR Module Review API
+servers:
+  - url: /api
+    description: Base API path
+tags:
+  - name: health
+    description: Health operations
+  - name: modules
+    description: Module review operations
+  - name: ai
+    description: AI classification and scoring
+  - name: export
+    description: Export operations
+paths:
+  /healthz:
+    get:
+      operationId: healthCheck
+      tags: [health]
+      summary: Health check
+      responses:
+        "200":
+          description: Healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthStatus"
+
+  /modules:
+    get:
+      operationId: listModules
+      tags: [modules]
+      summary: List all module reviews
+      parameters:
+        - name: sar
+          in: query
+          schema:
+            type: ["string", "null"]
+        - name: stage
+          in: query
+          schema:
+            type: ["string", "null"]
+        - name: scoreBand
+          in: query
+          schema:
+            type: ["string", "null"]
+        - name: confidence
+          in: query
+          schema:
+            type: ["string", "null"]
+        - name: status
+          in: query
+          schema:
+            type: ["string", "null"]
+      responses:
+        "200":
+          description: List of modules
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ModuleReview"
+    post:
+      operationId: createModule
+      tags: [modules]
+      summary: Create a new module review
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/CreateModuleBody"
+      responses:
+        "201":
+          description: Created module
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModuleReview"
+
+  /modules/{id}:
+    get:
+      operationId: getModule
+      tags: [modules]
+      summary: Get a module review by ID
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Module review
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModuleReview"
+        "404":
+          description: Not found
+    patch:
+      operationId: updateModule
+      tags: [modules]
+      summary: Update a module review
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateModuleBody"
+      responses:
+        "200":
+          description: Updated module
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModuleReview"
+        "404":
+          description: Not found
+    delete:
+      operationId: deleteModule
+      tags: [modules]
+      summary: Delete a module review
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "204":
+          description: Deleted
+
+  /modules/{id}/extract-fields:
+    post:
+      operationId: extractFields
+      tags: [ai]
+      summary: Use AI to extract structured fields from a module's raw text
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Extracted structured fields
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ExtractFieldsResult"
+        "404":
+          description: Not found
+
+  /modules/{id}/classify:
+    post:
+      operationId: classifyModule
+      tags: [ai]
+      summary: Run AI classification on a module
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: AI classification result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClassificationResult"
+        "404":
+          description: Not found
+
+  /modules/{id}/analyze-free-elective:
+    post:
+      operationId: analyzeFreeElective
+      tags: [ai]
+      summary: Run AI free elective analysis on a module
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      responses:
+        "200":
+          description: Free elective analysis result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/FreeElectiveResult"
+        "404":
+          description: Not found
+
+  /modules/{id}/score:
+    post:
+      operationId: scoreModule
+      tags: [ai]
+      summary: Run AI scoring on a module
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: integer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScoreModuleBody"
+      responses:
+        "200":
+          description: AI scoring result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ScoringResult"
+        "404":
+          description: Not found
+
+  /modules/parse-pdf:
+    post:
+      operationId: parsePdf
+      tags: [modules]
+      summary: Parse text from uploaded PDF
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ParsePdfBody"
+      responses:
+        "200":
+          description: Extracted text
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ParsedText"
+
+  /modules/parse-excel:
+    post:
+      operationId: parseExcel
+      tags: [modules]
+      summary: Parse modules from uploaded Excel file
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ParseExcelBody"
+      responses:
+        "200":
+          description: Parsed modules
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/ParsedModuleRow"
+
+  /dashboard/summary:
+    get:
+      operationId: getDashboardSummary
+      tags: [modules]
+      summary: Get dashboard summary stats
+      responses:
+        "200":
+          description: Summary stats
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/DashboardSummary"
+
+  /export/csv:
+    get:
+      operationId: exportCsv
+      tags: [export]
+      summary: Export all reviewed modules as CSV
+      responses:
+        "200":
+          description: CSV data
+          content:
+            text/csv:
+              schema:
+                type: string
+
+  /sar-definitions:
+    get:
+      operationId: getSarDefinitions
+      tags: [modules]
+      summary: Get all SAR definitions with criteria
+      responses:
+        "200":
+          description: SAR definitions
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: "#/components/schemas/SarDefinition"
+
+components:
+  schemas:
+    HealthStatus:
+      type: object
+      properties:
+        status:
+          type: string
+      required:
+        - status
+
+    ModuleReview:
+      type: object
+      properties:
+        id:
+          type: integer
+        moduleCode:
+          type: string
+        moduleTitle:
+          type: string
+        sourceType:
+          type: string
+        sourceFileName:
+          type: ["string", "null"]
+        rawText:
+          type: ["string", "null"]
+        overview:
+          type: ["string", "null"]
+        learningOutcomes:
+          type: ["string", "null"]
+        indicativeSyllabus:
+          type: ["string", "null"]
+        teachingMethods:
+          type: ["string", "null"]
+        primarySarAi:
+          type: ["string", "null"]
+        secondarySarAi:
+          type: ["string", "null"]
+        sarConfidence:
+          type: ["string", "null"]
+        sarRationale:
+          type: ["string", "null"]
+        selectedSarFinal:
+          type: ["string", "null"]
+        criterion1Name:
+          type: ["string", "null"]
+        criterion1ScoreAi:
+          type: ["number", "null"]
+        criterion1RationaleAi:
+          type: ["string", "null"]
+        criterion1ScoreFinal:
+          type: ["number", "null"]
+        criterion2Name:
+          type: ["string", "null"]
+        criterion2ScoreAi:
+          type: ["number", "null"]
+        criterion2RationaleAi:
+          type: ["string", "null"]
+        criterion2ScoreFinal:
+          type: ["number", "null"]
+        criterion3Name:
+          type: ["string", "null"]
+        criterion3ScoreAi:
+          type: ["number", "null"]
+        criterion3RationaleAi:
+          type: ["string", "null"]
+        criterion3ScoreFinal:
+          type: ["number", "null"]
+        criterion4Name:
+          type: ["string", "null"]
+        criterion4ScoreAi:
+          type: ["number", "null"]
+        criterion4RationaleAi:
+          type: ["string", "null"]
+        criterion4ScoreFinal:
+          type: ["number", "null"]
+        criterion5Name:
+          type: ["string", "null"]
+        criterion5ScoreAi:
+          type: ["number", "null"]
+        criterion5RationaleAi:
+          type: ["string", "null"]
+        criterion5ScoreFinal:
+          type: ["number", "null"]
+        averageScoreAi:
+          type: ["number", "null"]
+        averageScoreFinal:
+          type: ["number", "null"]
+        overallCommentAi:
+          type: ["string", "null"]
+        overallCommentFinal:
+          type: ["string", "null"]
+        suitabilityNoteAi:
+          type: ["string", "null"]
+        suitabilityNoteFinal:
+          type: ["string", "null"]
+        reviewerNote:
+          type: ["string", "null"]
+        stageInferred:
+          type: ["string", "null"]
+        scoreBand:
+          type: ["string", "null"]
+        reviewStatus:
+          type: string
+        disciplineFamily:
+          type: ["string", "null"]
+        accessibilityScoreAi:
+          type: ["number", "null"]
+        stageAppropriatenessScoreAi:
+          type: ["number", "null"]
+        breadthTransferabilityScoreAi:
+          type: ["number", "null"]
+        freeElectiveAverageAi:
+          type: ["number", "null"]
+        freeElectiveBandAi:
+          type: ["string", "null"]
+        tagExplore:
+          type: ["boolean", "null"]
+        tagUsefulSkills:
+          type: ["boolean", "null"]
+        tagPathwaySupport:
+          type: ["boolean", "null"]
+        freeElectiveRationaleAi:
+          type: ["string", "null"]
+        freeElectiveProcessedAt:
+          type: ["string", "null"]
+        assessmentText:
+          type: ["string", "null"]
+        requisitesStatus:
+          type: ["string", "null"]
+        requisitesRaw:
+          type: ["string", "null"]
+        createdAt:
+          type: string
+        updatedAt:
+          type: string
+      required:
+        - id
+        - moduleCode
+        - moduleTitle
+        - sourceType
+        - reviewStatus
+        - createdAt
+        - updatedAt
+
+    CreateModuleBody:
+      type: object
+      properties:
+        moduleCode:
+          type: string
+        moduleTitle:
+          type: string
+        sourceType:
+          type: string
+        sourceFileName:
+          type: ["string", "null"]
+        rawText:
+          type: ["string", "null"]
+        overview:
+          type: ["string", "null"]
+        learningOutcomes:
+          type: ["string", "null"]
+        indicativeSyllabus:
+          type: ["string", "null"]
+        teachingMethods:
+          type: ["string", "null"]
+        assessmentText:
+          type: ["string", "null"]
+        requisitesStatus:
+          type: ["string", "null"]
+        requisitesRaw:
+          type: ["string", "null"]
+      required:
+        - moduleCode
+        - moduleTitle
+        - sourceType
+
+    UpdateModuleBody:
+      type: object
+      properties:
+        moduleCode:
+          type: ["string", "null"]
+        moduleTitle:
+          type: ["string", "null"]
+        overview:
+          type: ["string", "null"]
+        learningOutcomes:
+          type: ["string", "null"]
+        indicativeSyllabus:
+          type: ["string", "null"]
+        teachingMethods:
+          type: ["string", "null"]
+        rawText:
+          type: ["string", "null"]
+        selectedSarFinal:
+          type: ["string", "null"]
+        criterion1ScoreFinal:
+          type: ["number", "null"]
+        criterion2ScoreFinal:
+          type: ["number", "null"]
+        criterion3ScoreFinal:
+          type: ["number", "null"]
+        criterion4ScoreFinal:
+          type: ["number", "null"]
+        criterion5ScoreFinal:
+          type: ["number", "null"]
+        overallCommentFinal:
+          type: ["string", "null"]
+        suitabilityNoteFinal:
+          type: ["string", "null"]
+        reviewerNote:
+          type: ["string", "null"]
+        reviewStatus:
+          type: ["string", "null"]
+        assessmentText:
+          type: ["string", "null"]
+        requisitesStatus:
+          type: ["string", "null"]
+        requisitesRaw:
+          type: ["string", "null"]
+
+    ExtractFieldsResult:
+      type: object
+      properties:
+        moduleCode:
+          type: ["string", "null"]
+        moduleTitle:
+          type: ["string", "null"]
+        overview:
+          type: ["string", "null"]
+        learningOutcomes:
+          type: ["string", "null"]
+        indicativeSyllabus:
+          type: ["string", "null"]
+        teachingMethods:
+          type: ["string", "null"]
+        assessmentText:
+          type: ["string", "null"]
+        requisitesStatus:
+          type: ["string", "null"]
+        requisitesRaw:
+          type: ["string", "null"]
+
+    ClassificationResult:
+      type: object
+      properties:
+        primarySar:
+          type: string
+        secondarySar:
+          type: ["string", "null"]
+        confidence:
+          type: string
+        rationale:
+          type: string
+      required:
+        - primarySar
+        - confidence
+        - rationale
+
+    ScoreModuleBody:
+      type: object
+      properties:
+        sarName:
+          type: string
+      required:
+        - sarName
+
+    ScoringResult:
+      type: object
+      properties:
+        criterion1Score:
+          type: number
+        criterion1Rationale:
+          type: string
+        criterion2Score:
+          type: number
+        criterion2Rationale:
+          type: string
+        criterion3Score:
+          type: number
+        criterion3Rationale:
+          type: string
+        criterion4Score:
+          type: number
+        criterion4Rationale:
+          type: string
+        criterion5Score:
+          type: number
+        criterion5Rationale:
+          type: string
+        averageScore:
+          type: number
+        overallComment:
+          type: string
+        suitabilityNote:
+          type: string
+      required:
+        - criterion1Score
+        - criterion1Rationale
+        - criterion2Score
+        - criterion2Rationale
+        - criterion3Score
+        - criterion3Rationale
+        - criterion4Score
+        - criterion4Rationale
+        - criterion5Score
+        - criterion5Rationale
+        - averageScore
+        - overallComment
+        - suitabilityNote
+
+    ParsePdfBody:
+      type: object
+      properties:
+        base64Data:
+          type: string
+        fileName:
+          type: string
+      required:
+        - base64Data
+        - fileName
+
+    ParsedText:
+      type: object
+      properties:
+        text:
+          type: string
+        fileName:
+          type: string
+      required:
+        - text
+        - fileName
+
+    ParseExcelBody:
+      type: object
+      properties:
+        base64Data:
+          type: string
+        fileName:
+          type: string
+      required:
+        - base64Data
+        - fileName
+
+    ParsedModuleRow:
+      type: object
+      properties:
+        moduleCode:
+          type: ["string", "null"]
+        moduleTitle:
+          type: ["string", "null"]
+        school:
+          type: ["string", "null"]
+        campus:
+          type: ["string", "null"]
+        overview:
+          type: ["string", "null"]
+        learningOutcomes:
+          type: ["string", "null"]
+        indicativeSyllabus:
+          type: ["string", "null"]
+        teachingMethods:
+          type: ["string", "null"]
+        assessmentText:
+          type: ["string", "null"]
+        requisitesStatus:
+          type: ["string", "null"]
+        requisitesRaw:
+          type: ["string", "null"]
+        affiliatedProgrammes:
+          type: array
+          items:
+            type: string
+        warnings:
+          type: array
+          items:
+            type: string
+      required:
+        - warnings
+
+    DashboardSummary:
+      type: object
+      properties:
+        total:
+          type: integer
+        byStatus:
+          type: object
+          additionalProperties:
+            type: integer
+        bySar:
+          type: object
+          additionalProperties:
+            type: integer
+        byStage:
+          type: object
+          additionalProperties:
+            type: integer
+        byScoreBand:
+          type: object
+          additionalProperties:
+            type: integer
+        byConfidence:
+          type: object
+          additionalProperties:
+            type: integer
+        averageScore:
+          type: ["number", "null"]
+      required:
+        - total
+        - byStatus
+        - bySar
+        - byStage
+        - byScoreBand
+        - byConfidence
+
+    FreeElectiveResult:
+      type: object
+      properties:
+        disciplineFamily:
+          type: string
+        accessibilityScore:
+          type: number
+        stageAppropriatenessScore:
+          type: number
+        breadthTransferabilityScore:
+          type: number
+        freeElectiveAverage:
+          type: number
+        freeElectiveBand:
+          type: string
+        tagExplore:
+          type: boolean
+        tagUsefulSkills:
+          type: boolean
+        tagPathwaySupport:
+          type: boolean
+        freeElectiveRationale:
+          type: string
+      required:
+        - disciplineFamily
+        - accessibilityScore
+        - stageAppropriatenessScore
+        - breadthTransferabilityScore
+        - freeElectiveAverage
+        - freeElectiveBand
+        - tagExplore
+        - tagUsefulSkills
+        - tagPathwaySupport
+        - freeElectiveRationale
+
+    SarDefinition:
+      type: object
+      properties:
+        name:
+          type: string
+        definition:
+          type: string
+        criteria:
+          type: array
+          items:
+            type: string
+      required:
+        - name
+        - definition
+        - criteria

@@ -1,0 +1,21 @@
+kind = "web"
+previewPath = "/"
+title = "CAST"
+version = "1.0.0"
+id = "artifacts/sar-review"
+router = "path"
+
+[[integratedSkills]]
+name = "react-vite"
+version = "1.0.0"
+
+[[services]]
+name = "web"
+localPort = 22052
+
+[services.development]
+run = "pnpm --filter @workspace/sar-review run dev"
+
+[services.env]
+PORT = "22052"
+BASE_PATH = "/"
