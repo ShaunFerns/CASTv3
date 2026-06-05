@@ -27,6 +27,10 @@ export interface ModuleReview {
   /** @nullable */
   teachingMethods?: string | null;
   /** @nullable */
+  school?: string | null;
+  /** @nullable */
+  campus?: string | null;
+  /** @nullable */
   primarySarAi?: string | null;
   /** @nullable */
   secondarySarAi?: string | null;
@@ -304,6 +308,8 @@ export interface DashboardSummary {
   byConfidence: DashboardSummaryByConfidence;
   /** @nullable */
   averageScore?: number | null;
+  /** @nullable */
+  latestUploadAt?: string | null;
 }
 
 export interface FreeElectiveResult {
@@ -334,6 +340,10 @@ export type ListModulesParams = {
    * @nullable
    */
   stage?: string | null;
+  /**
+   * @nullable
+   */
+  campus?: string | null;
   /**
    * @nullable
    */

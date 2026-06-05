@@ -20,4 +20,6 @@ export interface DashboardSummary {
   byConfidence: DashboardSummaryByConfidence;
   /** @nullable */
   averageScore?: number | null;
+  /** @nullable */
+  latestUploadAt?: string | null;
 }

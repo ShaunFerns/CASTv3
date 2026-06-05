@@ -18,6 +18,10 @@ export type ListModulesParams = {
   /**
    * @nullable
    */
+  campus?: string | null;
+  /**
+   * @nullable
+   */
   scoreBand?: string | null;
   /**
    * @nullable

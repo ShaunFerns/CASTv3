@@ -48,20 +48,26 @@ Thumbs.db
 .cache/
 .local/
 
-# Local environment secrets — never commit these files
-.env
-.env.local
-.env.*.local
-.env.production
-.env.staging
+# Local environment secrets - never commit these files.
+# Keep example files committed so new environments can be configured safely.
+.env*
+!.env.example
+!**/.env.example
 
 # Uploaded files and user data
 uploads/
 tmp/
 temp/
 
+# Generated local reports and exports
+exports/
+*.xlsx
+*.csv
+
 # Database dumps and exports
 *.sql
+!lib/db/migrations/**/*.sql
+!lib/db/validation/**/*.sql
 *.dump
 *.sqlite
 *.sqlite3

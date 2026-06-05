@@ -20,6 +20,7 @@ export const HealthCheckResponse = zod.object({
 export const ListModulesQueryParams = zod.object({
   sar: zod.coerce.string().nullish(),
   stage: zod.coerce.string().nullish(),
+  campus: zod.coerce.string().nullish(),
   scoreBand: zod.coerce.string().nullish(),
   confidence: zod.coerce.string().nullish(),
   status: zod.coerce.string().nullish(),
@@ -36,6 +37,8 @@ export const ListModulesResponseItem = zod.object({
   learningOutcomes: zod.string().nullish(),
   indicativeSyllabus: zod.string().nullish(),
   teachingMethods: zod.string().nullish(),
+  school: zod.string().nullish(),
+  campus: zod.string().nullish(),
   primarySarAi: zod.string().nullish(),
   secondarySarAi: zod.string().nullish(),
   sarConfidence: zod.string().nullish(),
@@ -126,6 +129,8 @@ export const GetModuleResponse = zod.object({
   learningOutcomes: zod.string().nullish(),
   indicativeSyllabus: zod.string().nullish(),
   teachingMethods: zod.string().nullish(),
+  school: zod.string().nullish(),
+  campus: zod.string().nullish(),
   primarySarAi: zod.string().nullish(),
   secondarySarAi: zod.string().nullish(),
   sarConfidence: zod.string().nullish(),
@@ -220,6 +225,8 @@ export const UpdateModuleResponse = zod.object({
   learningOutcomes: zod.string().nullish(),
   indicativeSyllabus: zod.string().nullish(),
   teachingMethods: zod.string().nullish(),
+  school: zod.string().nullish(),
+  campus: zod.string().nullish(),
   primarySarAi: zod.string().nullish(),
   secondarySarAi: zod.string().nullish(),
   sarConfidence: zod.string().nullish(),
@@ -409,6 +416,7 @@ export const GetDashboardSummaryResponse = zod.object({
   byScoreBand: zod.record(zod.string(), zod.number()),
   byConfidence: zod.record(zod.string(), zod.number()),
   averageScore: zod.number().nullish(),
+  latestUploadAt: zod.string().nullish(),
 });
 
 /**

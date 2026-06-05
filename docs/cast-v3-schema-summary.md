@@ -1,0 +1,208 @@
+# CAST v3 Schema Summary
+
+## Status
+
+CAST v3 currently exposes 99 Drizzle tables:
+
+- 5 legacy prototype tables retained for compatibility.
+- 94 additive Phase 2 tables.
+- 89 Phase 2 PostgreSQL enums.
+- 7 ordered Phase 2 SQL migrations.
+
+No legacy tables have been removed and no product workflow has yet been migrated to the new model.
+
+## Migration Sequence
+
+| Migration                                     | Phase | Purpose                                                                 |
+| --------------------------------------------- | ----- | ----------------------------------------------------------------------- |
+| `0001_phase2a_foundation.sql`                 | 2A    | Tenant access, frameworks, lenses, programme maps, priorities and audit |
+| `0002_phase2b_source_imports.sql`             | 2B    | Immutable source imports and reconciliation                             |
+| `0003_phase2c_curated_curriculum.sql`         | 2C    | Versioned programmes, modules, descriptors and curated structures       |
+| `0004_phase2d_evidence_framework.sql`         | 2D    | Documents, evidence, competencies, graduate attributes and expectations |
+| `0005_phase2e_ai_review_improvement.sql`      | 2E    | AI claims, human review, clarification and descriptor suggestions       |
+| `0006_phase2f_review_readiness_action.sql`    | 2F    | Review cycles, readiness, SWOT, action planning and exports             |
+| `0007_phase2g_data_quality_local_workers.sql` | 2G    | Data quality and optional local-worker execution scaffolding            |
+
+Migrations are additive and depend on the preceding migrations being applied in order.
+
+## Legacy Compatibility Tables
+
+| Table                | Purpose                                               |
+| -------------------- | ----------------------------------------------------- |
+| `module_reviews`     | Existing prototype module review and analysis records |
+| `programmes`         | Existing prototype programme records                  |
+| `programme_modules`  | Existing prototype programme/module links             |
+| `ga_classifications` | Existing prototype graduate-attribute classifications |
+| `audit_logs`         | Existing prototype audit log                          |
+
+Phase 2 records retain selected legacy identifiers where needed to support incremental migration.
+
+## Phase 2 Tables by Context
+
+### Tenant and Access
+
+| Table                     | Purpose                                  |
+| ------------------------- | ---------------------------------------- |
+| `institutions`            | Tenant boundary and institution metadata |
+| `users`                   | Platform identities                      |
+| `roles`                   | Global or institution-defined roles      |
+| `institution_memberships` | User membership within an institution    |
+| `membership_roles`        | Role assignments for memberships         |
+
+### Frameworks and Lenses
+
+| Table                     | Purpose                                          |
+| ------------------------- | ------------------------------------------------ |
+| `frameworks`              | External, system or institution-owned frameworks |
+| `framework_versions`      | Versioned framework definitions                  |
+| `lenses`                  | Configurable evidence-analysis perspectives      |
+| `lens_versions`           | Versioned analysis and output contracts          |
+| `lens_groups`             | Organised groups of lenses                       |
+| `lens_group_members`      | Lens membership and ordering                     |
+| `lens_configurations`     | Global, institution or programme configuration   |
+| `lens_framework_bindings` | Relationships between lenses and frameworks      |
+| `lens_output_schemas`     | Structured lens output definitions               |
+| `lens_evidence_rules`     | Evidence selection, weighting and prompt rules   |
+
+### Programme Maps
+
+| Table                         | Purpose                                                |
+| ----------------------------- | ------------------------------------------------------ |
+| `programme_maps`              | First-class programme maps                             |
+| `programme_map_versions`      | Versioned map snapshots                                |
+| `programme_map_layers`        | Framework, lens, priority, readiness or quality layers |
+| `programme_map_layer_sources` | Sources used by each layer                             |
+| `programme_map_cells`         | Layer positions and values                             |
+| `programme_map_annotations`   | Human annotations                                      |
+| `programme_map_exports`       | Export requests and artifacts                          |
+
+### Institutional Priorities
+
+| Table                           | Purpose                                                |
+| ------------------------------- | ------------------------------------------------------ |
+| `institution_priorities`        | Institution-owned strategic priorities                 |
+| `institution_priority_versions` | Versioned priority definitions                         |
+| `priority_mappings`             | Priority relationships to curriculum/framework targets |
+| `priority_expectations`         | Expected scaffolding or achievement levels             |
+
+### Audit
+
+| Table          | Purpose                                                   |
+| -------------- | --------------------------------------------------------- |
+| `audit_events` | Tenant-aware audit events for legacy and Phase 2 subjects |
+
+### Source Imports
+
+| Table                    | Purpose                                          |
+| ------------------------ | ------------------------------------------------ |
+| `source_systems`         | Akari or other source-system registrations       |
+| `import_batches`         | Import execution and status                      |
+| `source_records`         | Immutable raw source records                     |
+| `source_programmes`      | Parsed source programme records                  |
+| `source_modules`         | Parsed source module records                     |
+| `source_structure_items` | Parsed source structure records                  |
+| `reconciliation_links`   | Source-to-CAST matching without source overwrite |
+
+### Curated Curriculum
+
+| Table                      | Purpose                                       |
+| -------------------------- | --------------------------------------------- |
+| `programme_versions`       | Versioned editable programme records          |
+| `modules`                  | Institution-owned module identities           |
+| `module_descriptors`       | Versioned module descriptors                  |
+| `descriptor_sections`      | Typed descriptor content sections             |
+| `learning_outcomes`        | Structured learning outcomes                  |
+| `assessment_components`    | Structured assessment information             |
+| `curated_structures`       | Editable programme structures                 |
+| `curated_structure_groups` | Stages, semesters, pathways and option groups |
+| `curated_structure_items`  | Modules, choices, placeholders and notes      |
+
+### Evidence and Competency
+
+| Table                                  | Purpose                                        |
+| -------------------------------------- | ---------------------------------------------- |
+| `documents`                            | Logical evidence documents                     |
+| `document_versions`                    | Versioned files, text and checksums            |
+| `document_sections`                    | Precisely located document sections            |
+| `evidence_items`                       | Evidence observations linked to exact sources  |
+| `evidence_tags`                        | Reusable evidence tags                         |
+| `evidence_item_tags`                   | Evidence/tag relationships                     |
+| `competency_domains`                   | Framework-version competency domains           |
+| `competencies`                         | Framework-version competencies                 |
+| `programme_graduate_attributes`        | Programme-owned graduate attributes            |
+| `programme_attribute_expectations`     | Programme attribute expectations by scope      |
+| `programme_competency_expectations`    | Competency expectations by programme scope     |
+| `competency_evaluations`               | Observed evidence-based competency evaluations |
+| `competency_evaluation_evidence_links` | Evaluation provenance                          |
+
+Scaffolding values are `not_applicable`, `introduce`, `develop`, `integrate` and `demonstrate`.
+
+### AI Claims and Human Review
+
+| Table                                | Purpose                                             |
+| ------------------------------------ | --------------------------------------------------- |
+| `prompt_versions`                    | Versioned prompts and output contracts              |
+| `analysis_runs`                      | Analysis execution boundary                         |
+| `ai_model_runs`                      | Provider, model, token and execution metadata       |
+| `ai_claims`                          | Evidence-linked AI observations and recommendations |
+| `claim_evidence_links`               | Claim provenance                                    |
+| `descriptor_improvement_suggestions` | Non-destructive descriptor suggestions              |
+| `human_reviews`                      | Human decisions on claims and suggestions           |
+| `clarification_requests`             | Staff clarification without evidence overwrite      |
+
+### Review, Readiness, SWOT and Action Planning
+
+| Table group     | Tables                                                                                                                                                                                                                         |
+| --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Review          | `review_cycles`, `review_assignments`, `review_exports`                                                                                                                                                                        |
+| Readiness       | `readiness_assessments`, `readiness_assessment_items`, `readiness_assessment_item_evidence_links`, `readiness_assessment_item_claim_links`                                                                                     |
+| SWOT            | `swot_items`, `swot_item_evidence_links`, `swot_item_claim_links`, `swot_item_human_review_links`, `swot_item_programme_map_links`, `swot_item_competency_links`, `swot_item_priority_links`                                   |
+| Action planning | `action_plans`, `action_plan_items`, `action_plan_item_partners`, `action_plan_milestones`, `action_plan_item_swot_links`, `action_plan_item_readiness_links`, `action_plan_evidence_links`, `action_plan_item_priority_links` |
+
+Review cycles support programme review, validation, revalidation, accreditation, DELTA readiness and institutional-priority review.
+
+### Data Quality and Local Workers
+
+| Table                       | Purpose                                           |
+| --------------------------- | ------------------------------------------------- |
+| `data_quality_rules`        | Global or institution-specific quality rules      |
+| `data_quality_runs`         | Quality execution context                         |
+| `data_quality_results`      | Non-destructive quality findings                  |
+| `data_quality_result_links` | Exact links to affected source or curated records |
+| `local_workers`             | Optional institution-local worker registrations   |
+| `worker_jobs`               | Privacy-aware queued analysis jobs                |
+| `worker_job_artifacts`      | Checksummed artifact metadata and locations       |
+| `worker_sync_events`        | Idempotent worker/CAST synchronization events     |
+
+Data-quality target links use restrictive foreign keys so findings cannot silently lose provenance.
+
+## Key Relationship Patterns
+
+### Source to Curated
+
+Source records are preserved. Curated records may reference source programmes, modules and structure items, while reconciliation links capture uncertain or confirmed matches.
+
+### Evidence to Interpretation
+
+Document and descriptor sections produce evidence items. Evidence items support competency evaluations, AI claims, readiness findings, SWOT items and action plans.
+
+### Expectations to Observations
+
+Programme attribute and competency expectations describe intended scaffolding. Competency evaluations and claims describe observed evidence. They remain separate so evidence never silently replaces programme intent.
+
+### AI to Human Authority
+
+AI claims link to evidence and execution metadata. Human reviews and clarification requests provide institutional interpretation. Descriptor suggestions remain separate from official descriptor text.
+
+### Programme Maps
+
+Maps are versioned and layered. Map cells may represent framework, lens, priority, readiness, quality or custom views over one programme context.
+
+## Validation Status
+
+- Drizzle schema compiles successfully.
+- Migrations and schema table/index definitions have been checked for parity during each Phase 2 implementation.
+- Application typecheck, frontend build, backend build and local health smoke tests pass.
+- The full ordered migration set has not yet been applied and verified against a live disposable PostgreSQL database.
+
+Before production use, apply migrations `0001` through `0007` to disposable PostgreSQL and verify tables, enums, indexes, constraints and representative inserts.

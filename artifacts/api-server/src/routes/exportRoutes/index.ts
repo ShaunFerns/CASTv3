@@ -8,7 +8,7 @@ import * as XLSX from "xlsx";
 
 const router: IRouter = Router();
 
-function escapeCsv(value: string | number | null | undefined, replaceNewlines = false): string {
+function escapeCsv(value: string | number | boolean | null | undefined, replaceNewlines = false): string {
   if (value == null) return "";
   let str = String(value);
   if (replaceNewlines) {

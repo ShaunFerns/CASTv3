@@ -24,6 +24,10 @@ export interface ModuleReview {
   /** @nullable */
   teachingMethods?: string | null;
   /** @nullable */
+  school?: string | null;
+  /** @nullable */
+  campus?: string | null;
+  /** @nullable */
   primarySarAi?: string | null;
   /** @nullable */
   secondarySarAi?: string | null;

@@ -43,6 +43,10 @@ paths:
           in: query
           schema:
             type: ["string", "null"]
+        - name: campus
+          in: query
+          schema:
+            type: ["string", "null"]
         - name: scoreBand
           in: query
           schema:
@@ -344,6 +348,10 @@ components:
         indicativeSyllabus:
           type: ["string", "null"]
         teachingMethods:
+          type: ["string", "null"]
+        school:
+          type: ["string", "null"]
+        campus:
           type: ["string", "null"]
         primarySarAi:
           type: ["string", "null"]
@@ -718,6 +726,8 @@ components:
             type: integer
         averageScore:
           type: ["number", "null"]
+        latestUploadAt:
+          type: ["string", "null"]
       required:
         - total
         - byStatus

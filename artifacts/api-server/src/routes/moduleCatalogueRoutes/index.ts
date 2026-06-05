@@ -14,6 +14,15 @@ const EC_LEVELS_SET    = new Set(["None", "Foundation", "Intermediate", "Advance
 
 const router: IRouter = Router();
 
+function firstString(value: unknown): string {
+  if (Array.isArray(value)) return typeof value[0] === "string" ? value[0] : "";
+  return typeof value === "string" ? value : "";
+}
+
+function parseRouteInt(value: unknown): number {
+  return parseInt(firstString(value), 10);
+}
+
 const LEVEL_ORDER: Record<string, number> = {
   None: 0,
   Developing: 1, Consolidating: 2, Leading: 3,
@@ -33,7 +42,7 @@ const sysGenState: Record<string, { total: number; processed: number; generating
 // ?lens=ga (default) | greencomp | digcomp | entrecomp
 router.get("/module-catalogue", async (req, res): Promise<void> => {
   try {
-    const lens = (req.query.lens as string) || "ga";
+    const lens = firstString(req.query.lens) || "ga";
     const domains = lens === "greencomp"
       ? (GREENCOMP_COMPETENCES as readonly string[])
       : lens === "digcomp"
@@ -99,7 +108,7 @@ router.get("/module-catalogue", async (req, res): Promise<void> => {
 // Upsert a module-level (global, programmeId IS NULL) classification
 // Body: { domain, level, lens? (default "ga") }
 router.patch("/module-catalogue/:moduleId/ga", requireAdmin, async (req, res): Promise<void> => {
-  const moduleId = parseInt(req.params.moduleId);
+  const moduleId = parseRouteInt(req.params.moduleId);
   const { domain, level, lens = "ga" } = req.body as { domain: string; level: string; lens?: string };
 
   const validDomains = lens === "greencomp" ? GC_DOMAINS_SET
@@ -141,13 +150,13 @@ router.patch("/module-catalogue/:moduleId/ga", requireAdmin, async (req, res): P
 
 // ── GET /module-catalogue/:lens/batch-classify/status ────────────────────────
 router.get("/module-catalogue/:lens/batch-classify/status", (req, res): void => {
-  const lens = req.params.lens;
+  const lens = firstString(req.params.lens);
   res.json(sysGenState[lens] ?? { total: 0, processed: 0, generating: false });
 });
 
 // ── POST /module-catalogue/:lens/batch-classify ───────────────────────────────
 router.post("/module-catalogue/:lens/batch-classify", requireAdmin, async (req, res): Promise<void> => {
-  const lens = req.params.lens;
+  const lens = firstString(req.params.lens);
   const force = Boolean(req.body?.force);
 
   if (!["ga", "greencomp", "digcomp", "entrecomp"].includes(lens)) {
@@ -270,7 +279,7 @@ router.get("/module-catalogue/ga/batch-classify/status", (_req, res): void => {
   res.json(sysGenState["ga"]);
 });
 router.post("/module-catalogue/ga/batch-classify", (req, res, next) => {
-  req.params.lens = "ga";
+  (req.params as { lens?: string }).lens = "ga";
   next();
 });
 

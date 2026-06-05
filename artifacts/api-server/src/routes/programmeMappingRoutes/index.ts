@@ -14,6 +14,15 @@ function genKey(programmeId: number, lens: string) { return `${programmeId}-${le
 
 const router: IRouter = Router();
 
+function firstString(value: unknown): string {
+  if (Array.isArray(value)) return typeof value[0] === "string" ? value[0] : "";
+  return typeof value === "string" ? value : "";
+}
+
+function parseRouteInt(value: unknown): number {
+  return parseInt(firstString(value), 10);
+}
+
 // ── List programmes ──────────────────────────────────────────────────────────
 router.get("/programme-mapping/programmes", async (_req, res): Promise<void> => {
   try {
@@ -44,8 +53,8 @@ router.post("/programme-mapping/programmes", requireAdmin, async (req, res): Pro
 // ── Get programme (with modules + classifications) ────────────────────────────
 // ?lens=ga (default) | greencomp
 router.get("/programme-mapping/programmes/:id", async (req, res): Promise<void> => {
-  const id = parseInt(req.params.id);
-  const lens = (req.query.lens as string) || "ga";
+  const id = parseRouteInt(req.params.id);
+  const lens = firstString(req.query.lens) || "ga";
 
   try {
     const [prog] = await db.select().from(programmesTable).where(eq(programmesTable.id, id));
@@ -108,7 +117,7 @@ router.get("/programme-mapping/programmes/:id", async (req, res): Promise<void> 
 
 // ── Update programme metadata ─────────────────────────────────────────────────
 router.patch("/programme-mapping/programmes/:id", requireAdmin, async (req, res): Promise<void> => {
-  const id = parseInt(req.params.id);
+  const id = parseRouteInt(req.params.id);
   const { name, code, description } = req.body as { name?: string; code?: string; description?: string };
   try {
     const updates: Record<string, unknown> = {};
@@ -125,7 +134,7 @@ router.patch("/programme-mapping/programmes/:id", requireAdmin, async (req, res)
 
 // ── Delete programme ──────────────────────────────────────────────────────────
 router.delete("/programme-mapping/programmes/:id", requireAdmin, async (req, res): Promise<void> => {
-  const id = parseInt(req.params.id);
+  const id = parseRouteInt(req.params.id);
   try {
     await db.delete(programmeModulesTable).where(eq(programmeModulesTable.programmeId, id));
     await db.delete(gaClassificationsTable).where(eq(gaClassificationsTable.programmeId, id));
@@ -157,7 +166,7 @@ router.get("/programme-mapping/module-pool", async (_req, res): Promise<void> =>
 
 // ── Add module to programme ────────────────────────────────────────────────────
 router.post("/programme-mapping/programmes/:id/modules", requireAdmin, async (req, res): Promise<void> => {
-  const programmeId = parseInt(req.params.id);
+  const programmeId = parseRouteInt(req.params.id);
   const { moduleId, stage, semester, coreOption, orderIndex } = req.body as {
     moduleId: number; stage?: string; semester?: string; coreOption?: string; orderIndex?: number;
   };
@@ -175,8 +184,8 @@ router.post("/programme-mapping/programmes/:id/modules", requireAdmin, async (re
 
 // ── Remove module from programme ──────────────────────────────────────────────
 router.delete("/programme-mapping/programmes/:id/modules/:moduleId", requireAdmin, async (req, res): Promise<void> => {
-  const programmeId = parseInt(req.params.id);
-  const moduleId    = parseInt(req.params.moduleId);
+  const programmeId = parseRouteInt(req.params.id);
+  const moduleId    = parseRouteInt(req.params.moduleId);
   try {
     await db.delete(programmeModulesTable).where(
       and(eq(programmeModulesTable.programmeId, programmeId), eq(programmeModulesTable.moduleId, moduleId))
@@ -190,8 +199,8 @@ router.delete("/programme-mapping/programmes/:id/modules/:moduleId", requireAdmi
 
 // ── Update module metadata in programme ───────────────────────────────────────
 router.patch("/programme-mapping/programmes/:id/modules/:moduleId", requireAdmin, async (req, res): Promise<void> => {
-  const programmeId = parseInt(req.params.id);
-  const moduleId    = parseInt(req.params.moduleId);
+  const programmeId = parseRouteInt(req.params.id);
+  const moduleId    = parseRouteInt(req.params.moduleId);
   const { stage, semester, coreOption } = req.body as { stage?: string; semester?: string; coreOption?: string };
   try {
     const updates: Record<string, unknown> = {};
@@ -210,7 +219,7 @@ router.patch("/programme-mapping/programmes/:id/modules/:moduleId", requireAdmin
 
 // ── Bulk reorder programme modules ────────────────────────────────────────────
 router.put("/programme-mapping/programmes/:id/modules/reorder", requireAdmin, async (req, res): Promise<void> => {
-  const programmeId = parseInt(req.params.id);
+  const programmeId = parseRouteInt(req.params.id);
   const { order } = req.body as { order: { moduleId: number; orderIndex: number }[] };
   try {
     await Promise.all(order.map(({ moduleId, orderIndex }) =>
@@ -228,7 +237,7 @@ router.put("/programme-mapping/programmes/:id/modules/reorder", requireAdmin, as
 // ── Save classifications (upsert) — lens-aware ────────────────────────────────
 // Body: { classifications, lens? (default "ga") }
 router.put("/programme-mapping/programmes/:id/ga", requireAdmin, async (req, res): Promise<void> => {
-  const programmeId = parseInt(req.params.id);
+  const programmeId = parseRouteInt(req.params.id);
   const { classifications, lens = "ga" } = req.body as {
     classifications: { moduleId: number; domain: string; level: string; source?: string }[];
     lens?: string;
@@ -259,15 +268,15 @@ router.put("/programme-mapping/programmes/:id/ga", requireAdmin, async (req, res
 
 // ── Auto-classify status — lens-aware ─────────────────────────────────────────
 router.get("/programme-mapping/programmes/:id/ga/auto-classify/status", (req, res): void => {
-  const id   = parseInt(req.params.id);
-  const lens = (req.query.lens as string) || "ga";
+  const id   = parseRouteInt(req.params.id);
+  const lens = firstString(req.query.lens) || "ga";
   const state = genState[genKey(id, lens)] ?? { total: 0, processed: 0, generating: false };
   res.json(state);
 });
 
 // ── Auto-classify (AI first pass) — lens-aware ────────────────────────────────
 router.post("/programme-mapping/programmes/:id/ga/auto-classify", requireAdmin, async (req, res): Promise<void> => {
-  const programmeId = parseInt(req.params.id);
+  const programmeId = parseRouteInt(req.params.id);
   const force = Boolean(req.body?.force);
   const lens  = (req.body?.lens as string) || "ga";
   const key   = genKey(programmeId, lens);
@@ -336,12 +345,12 @@ router.post("/programme-mapping/programmes/:id/ga/auto-classify", requireAdmin, 
           classifyResult = await classifyModuleGA(
             mod.moduleCode, mod.moduleTitle, mod.learningOutcomes, mod.overview,
             mod.indicativeSyllabus, mod.teachingMethods, mod.assessmentText, mod.stageInferred, mod.disciplineFamily,
-          );
+          ) as unknown as Record<string, unknown>;
         } else if (lens === "greencomp") {
           classifyResult = await classifyModuleGreenComp(
             mod.moduleCode, mod.moduleTitle, mod.learningOutcomes, mod.overview,
             mod.indicativeSyllabus, mod.teachingMethods, mod.assessmentText, mod.stageInferred, mod.disciplineFamily,
-          );
+          ) as unknown as Record<string, unknown>;
         } else if (lens === "digcomp") {
           classifyResult = (await classifyModulesDigCompBatch(input))[0] as Record<string, unknown>;
         } else {

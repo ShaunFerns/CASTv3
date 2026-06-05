@@ -45,13 +45,19 @@ const pdfParse = async (buf: Buffer): Promise<{ text: string }> => {
 
 const router: IRouter = Router();
 
+function firstString(value: unknown): string | undefined {
+  if (Array.isArray(value)) return typeof value[0] === "string" ? value[0] : undefined;
+  return typeof value === "string" ? value : undefined;
+}
+
 router.get("/modules", async (req, res): Promise<void> => {
   const query = ListModulesQueryParams.parse(req.query);
+  const campus = firstString(req.query.campus);
   const conditions: SQL[] = [];
 
   if (query.sar) conditions.push(eq(moduleReviewsTable.selectedSarFinal, query.sar));
   if (query.stage) conditions.push(eq(moduleReviewsTable.stageInferred, query.stage));
-  if (query.campus) conditions.push(eq(moduleReviewsTable.campus, query.campus));
+  if (campus) conditions.push(eq(moduleReviewsTable.campus, campus));
   if (query.scoreBand) conditions.push(eq(moduleReviewsTable.scoreBand, query.scoreBand));
   if (query.confidence) conditions.push(eq(moduleReviewsTable.sarConfidence, query.confidence));
   if (query.status) conditions.push(eq(moduleReviewsTable.reviewStatus, query.status));

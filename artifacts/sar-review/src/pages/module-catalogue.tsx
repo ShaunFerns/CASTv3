@@ -87,9 +87,6 @@ const DC_DOMAINS: DomainConfig[] = [
   { key: "AddressingCompetenceGaps", label: "Competence gaps",         shortLabel: "Self-dev",   icon: Lightbulb, color: "#b45309", bg: "#fffbeb", area: "problem", desc: "Identify and address digital competence development needs." },
 ];
 
-interface AreaConfig { key: string; label: string; shortLabel: string; icon: LucideIcon; color: string; bg: string; competenceKeys: string[] }
-interface DomainConfig { key: string; label: string; shortLabel: string; icon: LucideIcon; color: string; bg: string; area: string; desc: string }
-
 const EC_AREAS: AreaConfig[] = [
   { key: "ideas",     label: "Ideas & Opportunities", shortLabel: "Ideas",     color: "#d97706", bg: "#fffbeb", icon: Eye,       competenceKeys: ["SpottingOpportunities","Creativity","Vision","ValuingIdeas","EthicalSustainableThinking"] },
   { key: "resources", label: "Resources",              shortLabel: "Resources", color: "#7c3aed", bg: "#faf5ff", icon: Scale,     competenceKeys: ["SelfAwareness","Motivation","MobilisingResources","FinancialLiteracy","MobilisingOthers"] },
