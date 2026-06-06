@@ -1,6 +1,7 @@
 import { Router, type IRouter } from "express";
 import type { Request, Response } from "express";
 import { requireAdmin } from "../../lib/auth.js";
+import { auditLoginSessionCreated, auditLogoutSessionRevoked } from "../../lib/auditWriter.js";
 import { db, auditLogsTable } from "@workspace/db";
 import { desc } from "drizzle-orm";
 
@@ -19,6 +20,7 @@ router.post("/auth/login", (req: Request, res: Response): void => {
 
   if (username === ADMIN_USERNAME && password === ADMIN_PASSWORD) {
     req.session.isAdmin = true;
+    auditLoginSessionCreated(req, { strategy: "legacy_admin" });
     res.json({ ok: true, isAdmin: true });
   } else {
     res.status(401).json({ error: "Invalid credentials" });
@@ -26,11 +28,13 @@ router.post("/auth/login", (req: Request, res: Response): void => {
 });
 
 router.post("/auth/logout", (req: Request, res: Response): void => {
+  const sessionId = req.sessionID;
   req.session.destroy((err) => {
     if (err) {
       res.status(500).json({ error: "Logout failed" });
       return;
     }
+    auditLogoutSessionRevoked(req, sessionId, { strategy: "legacy_admin" });
     res.clearCookie("cast.sid");
     res.json({ ok: true });
   });

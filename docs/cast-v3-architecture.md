@@ -59,10 +59,12 @@ The current UI remains the prototype experience. Phase 2 introduced no UI redesi
 - Framework: Express 5
 - Build: esbuild bundle
 - Logging: Pino
-- Sessions: Express session middleware
+- Sessions: Express session middleware backed by PostgreSQL `app_sessions`
 - Document support: PDF and spreadsheet parsing
 
 The production API bundle serves both API routes and the built frontend.
+
+Phase 3B-2 introduces reusable tenant-aware API middleware for session, user, institution, programme and review access resolution. Phase 3B-3 adds request IDs and API-side audit writing conventions for security events. These foundations are not yet applied broadly to legacy prototype routes.
 
 ### API Contracts
 
@@ -80,7 +82,7 @@ Phase 1 retained prototype API compatibility while making generated clients and 
 - Migration location: `lib/db/migrations`
 - Schema exports: `lib/db/src/schema/index.ts`
 
-The core CAST v3 migration chain creates 94 Phase 2 tables across tenant access, imports, curated curriculum, evidence, analysis, review, data quality and local-worker contexts. Prototype legacy tables are not required for fresh production databases. Optional legacy compatibility views are kept in a separate migration for prototype migration environments only.
+The core CAST v3 migration chain creates the Phase 2 domain model plus Phase 3B-1 identity/session foundations across tenant access, imports, curated curriculum, evidence, analysis, review, data quality, local-worker, session and programme-team contexts. Prototype legacy tables are not required for fresh production databases. Optional legacy compatibility views are kept in a separate migration for prototype migration environments only.
 
 ## CAST v3 Domain Architecture
 
@@ -194,7 +196,7 @@ Current production-start command:
 PORT=3000 NODE_ENV=production node --enable-source-maps artifacts/api-server/dist/index.mjs
 ```
 
-Before commercial production, replace Render `push-force`, default session storage and single-admin authentication with controlled migrations, persistent sessions and institution-ready identity/RBAC.
+Before commercial production, replace Render `push-force` and single-admin authentication with controlled migrations, tenant-aware identity/RBAC, API authorization middleware and RLS hardening.
 
 ## Current Architectural Status
 

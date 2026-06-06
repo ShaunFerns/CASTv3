@@ -25,6 +25,22 @@ export const roleScopeEnum = pgEnum("role_scope", [
   "programme",
 ]);
 
+export const programmeMembershipRoleEnum = pgEnum(
+  "programme_membership_role",
+  [
+    "programme_lead",
+    "editor",
+    "reviewer",
+    "viewer",
+    "external_contributor",
+  ],
+);
+
+export const programmeMembershipStatusEnum = pgEnum(
+  "programme_membership_status",
+  ["invited", "active", "inactive", "completed", "removed"],
+);
+
 export const frameworkStatusEnum = pgEnum("framework_status", [
   "draft",
   "active",
@@ -156,6 +172,8 @@ export const auditSubjectTypeEnum = pgEnum("audit_subject_type", [
   "worker_job",
   "worker_job_artifact",
   "worker_sync_event",
+  "app_session",
+  "programme_membership",
   "framework",
   "lens",
   "programme_map",

@@ -13,6 +13,7 @@ export const usersTable = pgTable(
   {
     id: uuid("id").primaryKey().defaultRandom(),
     email: text("email").notNull(),
+    authUserId: uuid("auth_user_id"),
     displayName: text("display_name"),
     status: userStatusEnum("status").notNull().default("invited"),
     externalSubject: text("external_subject"),
@@ -22,8 +23,28 @@ export const usersTable = pgTable(
   },
   (table) => [
     uniqueIndex("users_email_unique").on(table.email),
+    uniqueIndex("users_auth_user_id_unique").on(table.authUserId).where(sql`${table.authUserId} is not null`),
     index("users_status_idx").on(table.status),
     index("users_external_subject_idx").on(table.externalSubject),
+  ],
+);
+
+export const appSessionsTable = pgTable(
+  "app_sessions",
+  {
+    sid: text("sid").primaryKey(),
+    sess: jsonb("sess").$type<Record<string, unknown>>().notNull(),
+    expire: timestamp("expire", { precision: 6 }).notNull(),
+    userId: uuid("user_id").references(() => usersTable.id, { onDelete: "set null" }),
+    revokedAt: timestamp("revoked_at", { withTimezone: true }),
+    metadata: jsonb("metadata").$type<Record<string, unknown>>().notNull().default({}),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow().$onUpdate(() => new Date()),
+  },
+  (table) => [
+    index("app_sessions_expire_idx").on(table.expire),
+    index("app_sessions_user_idx").on(table.userId),
+    index("app_sessions_revoked_idx").on(table.revokedAt),
   ],
 );
 
@@ -82,6 +103,8 @@ export const membershipRolesTable = pgTable(
 
 export type User = typeof usersTable.$inferSelect;
 export type InsertUser = typeof usersTable.$inferInsert;
+export type AppSession = typeof appSessionsTable.$inferSelect;
+export type InsertAppSession = typeof appSessionsTable.$inferInsert;
 export type Role = typeof rolesTable.$inferSelect;
 export type InsertRole = typeof rolesTable.$inferInsert;
 export type InstitutionMembership = typeof institutionMembershipsTable.$inferSelect;

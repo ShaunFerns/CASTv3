@@ -9,11 +9,13 @@ import programmeMappingRouter from "./programmeMappingRoutes/index.js";
 import moduleCatalogueRouter from "./moduleCatalogueRoutes/index.js";
 import castOverviewRouter from "./castOverview/index.js";
 import authRouter from "./authRoutes/index.js";
+import securityRouter from "./security/index.js";
 
 const router: IRouter = Router();
 
 router.use(authRouter);
 router.use(healthRouter);
+router.use(securityRouter);
 router.use(modulesRouter);
 router.use(dashboardRouter);
 router.use(exportRouter);

@@ -227,9 +227,9 @@ The root route `/` also returned the built React `index.html`, confirming that t
 ## Current Limitations
 
 - The current admin login is single-admin environment-variable auth.
-- Sessions use the default Express session store and need a production store.
+- Sessions use PostgreSQL-backed `app_sessions` storage and require `0008_phase3b_identity_sessions_roles.sql`.
 - AI jobs currently run in-process in several areas.
 - Replit Vite plugins remain installed for prototype compatibility, but the production frontend and mockup sandbox load them only when `REPL_ID` is present.
-- A real PostgreSQL database is still required for DB-backed routes. The smoke test used a placeholder `DATABASE_URL`; only `/api/healthz` and static frontend serving were verified without a live database connection.
+- A real PostgreSQL database with migrations through `0008` is required for DB-backed routes and session persistence. The lightweight smoke test can still use a placeholder `DATABASE_URL` for `/api/healthz` and static frontend serving because no session is saved on that route.
 - A real OpenAI API key is still required for AI-assisted analysis routes. The smoke test used dummy OpenAI values only to confirm startup.
-- Render or any production host must replace the default Express memory session store before multi-user production use.
+- Render or any production host must apply the core migrations through `0008_phase3b_identity_sessions_roles.sql` before running the API with persistent sessions.

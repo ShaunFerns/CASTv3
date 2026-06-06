@@ -2,12 +2,12 @@
 
 ## Status
 
-CAST v3 currently exposes 99 Drizzle tables in code:
+CAST v3 currently exposes 101 Drizzle tables in code:
 
-- 94 additive Phase 2 tables created by the core production migration chain.
+- 96 additive production tables created by the core migration chain through Phase 3B-1.
 - 5 legacy prototype tables retained in code for compatibility with existing prototype workflows.
-- 89 Phase 2 PostgreSQL enums.
-- 7 ordered core Phase 2 SQL migrations.
+- 91 production PostgreSQL enums.
+- 8 ordered core SQL migrations.
 - 1 optional legacy compatibility-view migration for prototype migration environments.
 
 Fresh CAST v3 deployments do not require legacy tables. No legacy product workflow has yet been migrated to the new model.
@@ -23,9 +23,10 @@ Fresh CAST v3 deployments do not require legacy tables. No legacy product workfl
 | `0005_phase2e_ai_review_improvement.sql`      | 2E    | AI claims, human review, clarification and descriptor suggestions       |
 | `0006_phase2f_review_readiness_action.sql`    | 2F    | Review cycles, readiness, SWOT, action planning and exports             |
 | `0007_phase2g_data_quality_local_workers.sql` | 2G    | Data quality and optional local-worker execution scaffolding            |
+| `0008_phase3b_identity_sessions_roles.sql`    | 3B-1  | Auth identity mapping, PostgreSQL sessions and programme memberships    |
 | `0090_legacy_compatibility_views.sql`         | Optional | Compatibility views for prototype migration environments only        |
 
-Core migrations `0001` through `0007` are additive and depend on the preceding migrations being applied in order. The optional `0090` migration is not part of the clean production baseline.
+Core migrations `0001` through `0008` are additive and depend on the preceding migrations being applied in order. The optional `0090` migration is not part of the clean production baseline.
 
 ## Optional Legacy Compatibility
 
@@ -49,9 +50,11 @@ Phase 2 records retain selected legacy identifiers where needed to support incre
 | ------------------------- | ---------------------------------------- |
 | `institutions`            | Tenant boundary and institution metadata |
 | `users`                   | Platform identities                      |
+| `app_sessions`            | PostgreSQL-backed Express sessions       |
 | `roles`                   | Global or institution-defined roles      |
 | `institution_memberships` | User membership within an institution    |
 | `membership_roles`        | Role assignments for memberships         |
+| `programme_memberships`   | Programme team membership and roles      |
 
 ### Frameworks and Lenses
 
@@ -207,6 +210,7 @@ Maps are versioned and layered. Map cells may represent framework, lens, priorit
 - Drizzle schema compiles successfully.
 - Migrations and schema table/index definitions have been checked for parity during each Phase 2 implementation.
 - Application typecheck, frontend build, backend build and local health smoke tests pass.
-- The full ordered migration set has not yet been applied and verified against a live disposable PostgreSQL database.
+- Core migrations `0001` through `0008` have been applied and smoke-tested against clean Supabase PostgreSQL.
+- The validated Supabase baseline contains 96 production tables, 91 enums, 508 indexes and 330 foreign keys after `0008`.
 
-Before production use, apply migrations `0001` through `0007` to disposable PostgreSQL and verify tables, enums, indexes, constraints and representative inserts.
+Before production use, apply migrations `0001` through `0008` to disposable PostgreSQL and verify tables, enums, indexes, constraints and representative inserts.

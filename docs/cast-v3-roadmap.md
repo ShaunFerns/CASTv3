@@ -13,6 +13,7 @@ Completed:
 - Seven additive migrations define the future tenant, curriculum, evidence, analysis, review, quality and local-worker model.
 - Fresh CAST v3 deployments do not require legacy prototype tables.
 - Legacy compatibility views are optional and isolated for prototype migration environments.
+- Phase 3B-1 adds auth identity mapping, PostgreSQL-backed sessions and programme memberships.
 - Typecheck, frontend build, backend build and local startup smoke tests pass.
 
 Not yet completed:
@@ -37,7 +38,7 @@ CAST should move from schema foundation to production workflows incrementally:
 
 ### 3A. PostgreSQL Migration Validation
 
-- Apply migrations `0001` through `0007` in order to disposable PostgreSQL.
+- Apply migrations `0001` through `0008` in order to disposable PostgreSQL.
 - Verify all enums, tables, indexes, constraints and foreign keys.
 - Keep optional prototype compatibility migrations separate from the clean production baseline.
 - Add repeatable migration integration tests.
@@ -51,7 +52,7 @@ Exit criteria: a clean database can be created from migrations in CI and a produ
 
 - Replace single-admin environment authentication.
 - Integrate institution-ready identity, initially OIDC/SAML-capable.
-- Add persistent sessions.
+- Extend persistent sessions into production session management and revocation workflows.
 - Define platform, institution, programme and review roles.
 - Enforce tenant ownership in services and database access.
 - Assess PostgreSQL row-level security.
@@ -183,7 +184,7 @@ Exit criteria: an institution can process a privacy-sensitive document locally a
 
 ## Recommended Immediate Priorities
 
-1. Validate migrations `0001` through `0007` against disposable PostgreSQL.
+1. Validate migrations `0001` through `0008` against disposable PostgreSQL.
 2. Replace `push-force` with controlled migration execution.
 3. Implement production authentication, persistent sessions and tenant-isolation tests.
 4. Select one pilot programme and migrate the import-to-curated-structure workflow.

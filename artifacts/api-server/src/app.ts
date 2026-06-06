@@ -7,16 +7,20 @@ import { existsSync } from "fs";
 import { fileURLToPath } from "url";
 import router from "./routes";
 import { logger } from "./lib/logger";
+import { PostgresSessionStore } from "./lib/postgresSessionStore";
+import { requestIdMiddleware } from "./lib/requestId";
 
 const app: Express = express();
 
+app.use(requestIdMiddleware());
 app.use(
   pinoHttp({
     logger,
+    genReqId: (req) => req.requestId,
     serializers: {
       req(req) {
         return {
-          id: req.id,
+          id: req.requestId,
           method: req.method,
           url: req.url?.split("?")[0],
         };
@@ -33,6 +37,7 @@ app.use(cors({ origin: true, credentials: true }));
 app.use(
   session({
     name: "cast.sid",
+    store: new PostgresSessionStore(),
     secret: process.env.SESSION_SECRET ?? "cast-dev-secret-change-in-production",
     resave: false,
     saveUninitialized: false,
