@@ -26,6 +26,8 @@ import ModuleCatalogue from "@/pages/module-catalogue";
 import Assessment from "@/pages/assessment";
 import Modality from "@/pages/modality";
 import Login from "@/pages/login";
+import Ingestion from "@/pages/ingestion";
+import ProgrammeWorkspace from "@/pages/programme-workspace";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient({
@@ -58,9 +60,11 @@ function Router() {
         <Route path="/programme/digcomp" component={DigCompDashboard} />
         <Route path="/programme/entrecomp" component={EntreCompDashboard} />
         <Route path="/programme/import" component={ProgrammeImport} />
+        <Route path="/programme/workspace" component={ProgrammeWorkspace} />
         <Route path="/programme" component={Programme} />
         <Route path="/assessment" component={Assessment} />
         <Route path="/modality" component={Modality} />
+        <Route path="/ingestion" component={Ingestion} />
         <Route path="/admin/login" component={Login} />
         <Route component={NotFound} />
       </Switch>

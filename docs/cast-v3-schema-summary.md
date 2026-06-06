@@ -2,12 +2,12 @@
 
 ## Status
 
-CAST v3 currently exposes 101 Drizzle tables in code:
+CAST v3 currently exposes 105 Drizzle tables in code:
 
-- 96 additive production tables created by the core migration chain through Phase 3B-1.
+- 100 additive production tables created by the core migration chain through Phase 4A.
 - 5 legacy prototype tables retained in code for compatibility with existing prototype workflows.
 - 91 production PostgreSQL enums.
-- 8 ordered core SQL migrations.
+- 9 ordered core SQL migrations.
 - 1 optional legacy compatibility-view migration for prototype migration environments.
 
 Fresh CAST v3 deployments do not require legacy tables. No legacy product workflow has yet been migrated to the new model.
@@ -24,9 +24,10 @@ Fresh CAST v3 deployments do not require legacy tables. No legacy product workfl
 | `0006_phase2f_review_readiness_action.sql`    | 2F    | Review cycles, readiness, SWOT, action planning and exports             |
 | `0007_phase2g_data_quality_local_workers.sql` | 2G    | Data quality and optional local-worker execution scaffolding            |
 | `0008_phase3b_identity_sessions_roles.sql`    | 3B-1  | Auth identity mapping, PostgreSQL sessions and programme memberships    |
+| `0009_phase4a_curriculum_ingestion.sql`        | 4A    | Cross-pathway curriculum ingestion runs, items, errors and record links |
 | `0090_legacy_compatibility_views.sql`         | Optional | Compatibility views for prototype migration environments only        |
 
-Core migrations `0001` through `0008` are additive and depend on the preceding migrations being applied in order. The optional `0090` migration is not part of the clean production baseline.
+Core migrations `0001` through `0009` are additive and depend on the preceding migrations being applied in order. The optional `0090` migration is not part of the clean production baseline.
 
 ## Optional Legacy Compatibility
 
@@ -109,6 +110,17 @@ Phase 2 records retain selected legacy identifiers where needed to support incre
 | `source_modules`         | Parsed source module records                     |
 | `source_structure_items` | Parsed source structure records                  |
 | `reconciliation_links`   | Source-to-CAST matching without source overwrite |
+
+### Curriculum Ingestion
+
+| Table                    | Purpose                                                                    |
+| ------------------------ | -------------------------------------------------------------------------- |
+| `ingestion_runs`         | Tenant-owned lifecycle for Akari, PDF/text, manual and future wizard flows |
+| `ingestion_items`        | Per-row or per-document work items and normalized payloads                 |
+| `ingestion_errors`       | Non-destructive ingestion warnings and errors                              |
+| `ingestion_record_links` | Created or matched source, document, descriptor, evidence and quality rows |
+
+Ingestion is pathway-neutral after materialisation. Downstream evidence and analysis services should read documents, descriptor sections and evidence items rather than testing whether a record came from Akari, PDF or manual entry.
 
 ### Curated Curriculum
 

@@ -71,15 +71,17 @@ Exit criteria: users can access only authorized institution and programme data.
 
 Exit criteria: CAST can be operated safely in a production-like environment.
 
-## Phase 4: Source Import and Curated Curriculum Services
+## Phase 4: Curriculum Ingestion and Curated Curriculum Services
 
-### 4A. Import Pipeline
+### 4A. Curriculum Ingestion Pipeline
 
-- Implement source-system adapters, beginning with Akari-compatible imports.
-- Store immutable source records and import batches.
-- Add parsing, validation and reconciliation services.
-- Surface stale imports, orphaned modules and missing structures.
-- Support repeat imports without overwriting source history.
+- Implement shared ingestion runs, items, errors and record links.
+- Support multiple ingestion pathways: Akari-compatible CSV/XLSX, single module descriptor PDF/text, manual module entry and future programme wizard.
+- Store immutable source records and import batches for institutional source imports where applicable.
+- Materialise all pathways into canonical documents, modules, module descriptors, descriptor sections and evidence items.
+- Preserve incomplete data and surface missing module code, title, credits, stage and semester as data-quality findings.
+- Keep downstream analysis independent of ingestion pathway.
+- Support repeat ingestions without overwriting source history.
 
 ### 4B. Curated Programme Workspace
 
@@ -89,7 +91,7 @@ Exit criteria: CAST can be operated safely in a production-like environment.
 - Introduce explicit publish/approval states.
 - Preserve source-versus-curated comparison.
 
-Exit criteria: a programme team can import, reconcile and curate one complete programme without using legacy tables.
+Exit criteria: a programme team can ingest curriculum through at least one institutional source and one direct descriptor pathway, then curate one complete programme without using legacy tables.
 
 ## Phase 5: Evidence and Curriculum Intelligence
 

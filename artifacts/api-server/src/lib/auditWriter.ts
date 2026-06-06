@@ -2,6 +2,7 @@ import type { Request, RequestHandler, Response } from "express";
 import { auditEventsTable, db, type InsertAuditEvent } from "@workspace/db";
 import { logger } from "./logger.js";
 import type { CastRequestContext, CastSystemActorContext, CastWorkerActorContext } from "./requestContext.js";
+import type { PreviewBridgeSession } from "./previewBridge.js";
 
 export type AuditActorContext = CastRequestContext | CastSystemActorContext | CastWorkerActorContext;
 
@@ -142,6 +143,25 @@ export function auditLogoutSessionRevoked(req: Request, sessionId: string | unde
     subjectType: "app_session",
     subjectId: sessionId,
     metadata,
+  });
+}
+
+export function auditPreviewBridgeSessionCreated(req: Request, bridge: PreviewBridgeSession): void {
+  writeRequestAuditEventSoon({
+    req,
+    actorType: "system",
+    actorIdentifier: "cast_v3_preview_bridge",
+    institutionId: bridge.institutionId,
+    actionType: "session.preview_bridge_created",
+    subjectType: "app_session",
+    subjectId: req.sessionID,
+    metadata: {
+      userId: bridge.userId,
+      membershipId: bridge.membershipId,
+      roleId: bridge.roleId,
+      roleKey: bridge.roleKey,
+      productionEnabled: false,
+    },
   });
 }
 

@@ -10,12 +10,16 @@ import moduleCatalogueRouter from "./moduleCatalogueRoutes/index.js";
 import castOverviewRouter from "./castOverview/index.js";
 import authRouter from "./authRoutes/index.js";
 import securityRouter from "./security/index.js";
+import ingestionRouter from "./ingestion/index.js";
+import programmeWorkspaceRouter from "./programmeWorkspace/index.js";
 
 const router: IRouter = Router();
 
 router.use(authRouter);
 router.use(healthRouter);
 router.use(securityRouter);
+router.use(ingestionRouter);
+router.use(programmeWorkspaceRouter);
 router.use(modulesRouter);
 router.use(dashboardRouter);
 router.use(exportRouter);

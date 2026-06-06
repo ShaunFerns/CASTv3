@@ -30,6 +30,31 @@ Set at minimum:
 
 The `AI_INTEGRATIONS_OPENAI_*` names are retained for prototype compatibility. They should be renamed behind a compatibility layer during the production-hardening phase.
 
+### CAST v3 Preview Bridge
+
+`CAST_V3_PREVIEW_BRIDGE` is a development/preview-only bridge for testing secured CAST v3 screens before full Supabase Auth is implemented.
+
+When `CAST_V3_PREVIEW_BRIDGE=true` and `NODE_ENV` is not `production`, a successful legacy admin login seeds or reuses:
+
+- a preview institution
+- a preview user
+- an active institution membership
+- an institution-admin role assignment
+
+The login then stores `req.session.castUserId` and `req.session.selectedInstitutionId`, allowing Phase 3B middleware to resolve a real CAST v3 request context. This makes `/api/security/context`, `/api/ingestion/*` and `/api/programme-workspace/*` usable for local preview without bypassing those middleware checks.
+
+The bridge is disabled by default and is ignored in production even if the flag is set.
+
+```bash
+CAST_V3_PREVIEW_BRIDGE=true
+CAST_V3_PREVIEW_INSTITUTION_SLUG=cast-preview
+CAST_V3_PREVIEW_INSTITUTION_NAME="CAST Preview Institution"
+CAST_V3_PREVIEW_USER_EMAIL=preview-admin@cast.local
+CAST_V3_PREVIEW_USER_NAME="CAST Preview Admin"
+```
+
+Do not use the preview bridge as production authentication. It exists only to bridge the old single-admin prototype login to the new CAST v3 tenant-aware API during development.
+
 ## Install
 
 ```bash
@@ -230,6 +255,17 @@ The root route `/` also returned the built React `index.html`, confirming that t
 - Sessions use PostgreSQL-backed `app_sessions` storage and require `0008_phase3b_identity_sessions_roles.sql`.
 - AI jobs currently run in-process in several areas.
 - Replit Vite plugins remain installed for prototype compatibility, but the production frontend and mockup sandbox load them only when `REPL_ID` is present.
-- A real PostgreSQL database with migrations through `0008` is required for DB-backed routes and session persistence. The lightweight smoke test can still use a placeholder `DATABASE_URL` for `/api/healthz` and static frontend serving because no session is saved on that route.
+- A real PostgreSQL database with migrations through `0009` is required for DB-backed routes, session persistence and CAST v3 ingestion. The lightweight smoke test can still use a placeholder `DATABASE_URL` for `/api/healthz` and static frontend serving because no session is saved on that route.
 - A real OpenAI API key is still required for AI-assisted analysis routes. The smoke test used dummy OpenAI values only to confirm startup.
-- Render or any production host must apply the core migrations through `0008_phase3b_identity_sessions_roles.sql` before running the API with persistent sessions.
+- Render or any production host must apply the core migrations through `0009_phase4a_curriculum_ingestion.sql` before using the CAST v3 ingestion routes.
+
+### CAST v3 Ingestion Routes
+
+Phase 4A adds secured API routes:
+
+- `GET /api/ingestion/runs`
+- `POST /api/ingestion/akari`
+- `POST /api/ingestion/pdf`
+- `POST /api/ingestion/manual-module`
+
+These routes require the Phase 3B CAST identity session and institution context. The legacy admin-only session does not grant access to them unless the development-only CAST v3 preview bridge is explicitly enabled.

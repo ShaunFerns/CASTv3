@@ -9,6 +9,7 @@ import { useAuth } from "@/lib/auth";
 
 const allNavItems = [
   { href: "/", label: "Home", icon: Home, exact: true },
+  { href: "/ingestion", label: "CAST v3 Ingestion", icon: Upload, exact: false },
   { href: "/upload", label: "Upload Modules", icon: Upload, exact: false },
   { href: "/dashboard", label: "SAR Dashboard", icon: LayoutDashboard, exact: false },
   { href: "/free-electives", label: "Free Electives", icon: Sparkles, exact: false },
@@ -32,7 +33,9 @@ const structureNavItems = [
 
 const programmeNavItems = [
   { href: "/", label: "Home", icon: Home, exact: true },
+  { href: "/ingestion", label: "CAST v3 Ingestion", icon: Upload, exact: false },
   { href: "/programme", label: "Programmes", icon: ClipboardCheck, exact: true },
+  { href: "/programme/workspace", label: "Programme Workspace", icon: Library, exact: false },
   { href: "/programme/ga", label: "Graduate Attributes", icon: BarChart2, exact: false },
   { href: "/programme/greencomp", label: "GreenComp", icon: Leaf, exact: false },
   { href: "/programme/digcomp", label: "DigComp 3.0", icon: Monitor, exact: false },

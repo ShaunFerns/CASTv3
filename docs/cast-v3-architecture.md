@@ -99,9 +99,14 @@ flowchart TB
   Quality["Data quality rules, runs and findings"]
   Workers["Optional local workers, jobs, artifacts and sync events"]
   Audit["Tenant-aware audit events"]
+  Ingestion["Curriculum ingestion runs and adapters"]
 
+  Tenant --> Ingestion
   Tenant --> Import
   Tenant --> Curated
+  Ingestion --> Import
+  Ingestion --> Curated
+  Ingestion --> Evidence
   Import --> Curated
   Curated --> Evidence
   Frameworks --> Evidence
@@ -139,6 +144,8 @@ Frameworks and lenses are deliberately separate: one framework may be interprete
 Source-system data, including future Akari imports, is retained in immutable source records and typed source entities. Reconciliation links connect source data to CAST records without overwriting the source.
 
 Curated programme versions, module descriptors and structures are editable CAST representations. They support stages, semesters, pathways, module groups, core/option status, ordering and credits while tolerating incomplete data.
+
+Phase 4A introduces a curriculum ingestion layer above source imports and curated curriculum. Akari-compatible CSV/XLSX, single descriptor PDF/text uploads, manual module entry and the future programme wizard create ingestion runs, items, errors and record links. Pathway-specific adapters may create source records where applicable, but all pathways ultimately materialise the same canonical documents, modules, module descriptors, descriptor sections and evidence items. Downstream analysis consumes those canonical records rather than pathway-specific import tables.
 
 ### Evidence and Competency
 
