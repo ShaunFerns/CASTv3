@@ -132,9 +132,4 @@ SELECT COUNT(*) AS programme_maps_read FROM programme_maps WHERE key = 'smoke-ma
 SELECT COUNT(*) AS institution_priorities_read FROM institution_priorities WHERE key = 'smoke-priority';
 SELECT COUNT(*) AS audit_events_read FROM audit_events WHERE action_type = 'phase2a_smoke_started';
 
-SELECT COUNT(*) AS legacy_module_reviews_still_readable FROM module_reviews;
-SELECT COUNT(*) AS legacy_programmes_still_readable FROM programmes;
-SELECT COUNT(*) AS compat_legacy_module_reviews_readable FROM compat_legacy_module_reviews;
-SELECT COUNT(*) AS compat_legacy_programmes_readable FROM compat_legacy_programmes;
-
 ROLLBACK;

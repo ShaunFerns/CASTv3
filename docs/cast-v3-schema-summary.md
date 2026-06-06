@@ -2,14 +2,15 @@
 
 ## Status
 
-CAST v3 currently exposes 99 Drizzle tables:
+CAST v3 currently exposes 99 Drizzle tables in code:
 
-- 5 legacy prototype tables retained for compatibility.
-- 94 additive Phase 2 tables.
+- 94 additive Phase 2 tables created by the core production migration chain.
+- 5 legacy prototype tables retained in code for compatibility with existing prototype workflows.
 - 89 Phase 2 PostgreSQL enums.
-- 7 ordered Phase 2 SQL migrations.
+- 7 ordered core Phase 2 SQL migrations.
+- 1 optional legacy compatibility-view migration for prototype migration environments.
 
-No legacy tables have been removed and no product workflow has yet been migrated to the new model.
+Fresh CAST v3 deployments do not require legacy tables. No legacy product workflow has yet been migrated to the new model.
 
 ## Migration Sequence
 
@@ -22,12 +23,15 @@ No legacy tables have been removed and no product workflow has yet been migrated
 | `0005_phase2e_ai_review_improvement.sql`      | 2E    | AI claims, human review, clarification and descriptor suggestions       |
 | `0006_phase2f_review_readiness_action.sql`    | 2F    | Review cycles, readiness, SWOT, action planning and exports             |
 | `0007_phase2g_data_quality_local_workers.sql` | 2G    | Data quality and optional local-worker execution scaffolding            |
+| `0090_legacy_compatibility_views.sql`         | Optional | Compatibility views for prototype migration environments only        |
 
-Migrations are additive and depend on the preceding migrations being applied in order.
+Core migrations `0001` through `0007` are additive and depend on the preceding migrations being applied in order. The optional `0090` migration is not part of the clean production baseline.
 
-## Legacy Compatibility Tables
+## Optional Legacy Compatibility
 
-| Table                | Purpose                                               |
+Legacy compatibility is only used when migrating from the prototype. The optional compatibility migration creates `compat_legacy_*` views only when the corresponding legacy tables exist.
+
+| Legacy table         | Purpose                                               |
 | -------------------- | ----------------------------------------------------- |
 | `module_reviews`     | Existing prototype module review and analysis records |
 | `programmes`         | Existing prototype programme records                  |

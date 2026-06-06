@@ -11,6 +11,8 @@ Completed:
 - Environment examples and local-development documentation exist.
 - Existing prototype functionality remains available.
 - Seven additive migrations define the future tenant, curriculum, evidence, analysis, review, quality and local-worker model.
+- Fresh CAST v3 deployments do not require legacy prototype tables.
+- Legacy compatibility views are optional and isolated for prototype migration environments.
 - Typecheck, frontend build, backend build and local startup smoke tests pass.
 
 Not yet completed:
@@ -37,6 +39,7 @@ CAST should move from schema foundation to production workflows incrementally:
 
 - Apply migrations `0001` through `0007` in order to disposable PostgreSQL.
 - Verify all enums, tables, indexes, constraints and foreign keys.
+- Keep optional prototype compatibility migrations separate from the clean production baseline.
 - Add repeatable migration integration tests.
 - Introduce a migration journal and controlled deploy command.
 - Remove `push-force` from production deployment.

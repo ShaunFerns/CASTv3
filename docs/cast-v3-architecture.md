@@ -13,6 +13,8 @@ The current repository contains two architectural generations:
 
 Phase 2 deliberately does not migrate user-facing workflows. The new model sits beside the prototype so product migration can happen incrementally.
 
+Fresh CAST v3 deployments do not require the prototype legacy tables. Legacy compatibility views are optional and are only used in environments migrating data from the original prototype schema.
+
 ## Architectural Principles
 
 - Evidence first: analysis and decisions must remain traceable to source evidence.
@@ -78,7 +80,7 @@ Phase 1 retained prototype API compatibility while making generated clients and 
 - Migration location: `lib/db/migrations`
 - Schema exports: `lib/db/src/schema/index.ts`
 
-The database currently contains five legacy prototype tables and 94 additive Phase 2 tables across tenant access, imports, curated curriculum, evidence, analysis, review, data quality and local-worker contexts.
+The core CAST v3 migration chain creates 94 Phase 2 tables across tenant access, imports, curated curriculum, evidence, analysis, review, data quality and local-worker contexts. Prototype legacy tables are not required for fresh production databases. Optional legacy compatibility views are kept in a separate migration for prototype migration environments only.
 
 ## CAST v3 Domain Architecture
 

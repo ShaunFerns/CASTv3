@@ -54,17 +54,6 @@ WHERE table_schema = 'public'
     'audit_events'
   );
 
-SELECT 'compat_views' AS object_kind, COUNT(*) AS found
-FROM information_schema.views
-WHERE table_schema = 'public'
-  AND table_name IN (
-    'compat_legacy_module_reviews',
-    'compat_legacy_programmes',
-    'compat_legacy_programme_modules',
-    'compat_legacy_ga_classifications',
-    'compat_legacy_audit_logs'
-  );
-
 SELECT 'indexes' AS object_kind, COUNT(*) AS found
 FROM pg_indexes
 WHERE schemaname = 'public'
