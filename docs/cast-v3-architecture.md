@@ -23,7 +23,7 @@ Fresh CAST v3 deployments do not require the prototype legacy tables. Legacy com
 - Human authority: AI outputs are claims and observations, not institutional truth.
 - Versioned interpretation: frameworks, lenses, programme maps, priorities and descriptors are versioned.
 - Layered analysis: multiple lenses may operate over one evidence base.
-- Progression aware: competency expectations and observations use explicit scaffolding levels.
+- Evidence-maturity aware: competency expectations and observations use explicit curriculum evidence maturity levels.
 - Additive migration: legacy functionality remains available until workflows are safely migrated.
 - Tenant boundaries: institution ownership is explicit throughout the new model.
 - Hybrid processing: privacy-sensitive analysis may run through optional institution-local workers.
@@ -151,13 +151,16 @@ Phase 4A introduces a curriculum ingestion layer above source imports and curate
 
 Documents, document versions and exact sections form evidence sources alongside descriptor sections, learning outcomes and assessment components. Evidence items retain precise provenance where possible.
 
-Competencies belong to framework versions. Programme-owned graduate attributes and programme expectations are first-class. Expected and observed scaffolding use:
+Competencies belong to framework versions. Programme-owned graduate attributes and programme expectations are first-class. Expected and observed evidence maturity use:
 
-- Not Applicable
-- Introduce
-- Develop
-- Integrate
-- Demonstrate
+- None
+- Developing
+- Consolidating
+- Leading
+
+CAST measures curriculum evidence maturity. These values are not claims about learner attainment or learner progression.
+
+Programme expectations can be defined at programme, stage, semester, pathway, module-group and module scope. CAST compares expected evidence maturity with observed evidence maturity, evidence count and review status to produce coverage, gap and strength summaries.
 
 ### AI Claims and Human Review
 
@@ -167,7 +170,9 @@ Descriptor improvement suggestions remain separate from official descriptors and
 
 ### Programme Maps
 
-Programme maps are first-class, versioned objects. Each map may contain multiple layers sourced from frameworks, lenses, institutional priorities, readiness results, data quality or custom analysis. Cells and annotations preserve review state and evidence summaries.
+Programme maps are first-class, versioned objects. Each map may contain multiple layers sourced from frameworks, lenses, institutional priorities, programme-owned attributes, readiness results, data quality or custom analysis. Cells and annotations preserve review state and evidence summaries.
+
+Phase 5 establishes the map as a multi-framework workspace. GreenComp, LifeComp, EntreComp and DigComp are seeded as system frameworks with separate evidence lenses and switchable map layers. Programme-owned frameworks, disciplinary frameworks and professional/accreditation frameworks use the same layer architecture so new framework families do not require a redesigned base map.
 
 ### Review, Readiness, SWOT and Action Planning
 

@@ -74,7 +74,7 @@ export const priorityExpectationsTable = pgTable(
     institutionPriorityVersionId: uuid("institution_priority_version_id").notNull().references(() => institutionPriorityVersionsTable.id, { onDelete: "cascade" }),
     targetType: priorityMappingTargetTypeEnum("target_type").notNull(),
     targetId: text("target_id").notNull(),
-    expectedLevel: priorityExpectationLevelEnum("expected_level").notNull().default("not_applicable"),
+    expectedLevel: priorityExpectationLevelEnum("expected_level").notNull().default("none"),
     rationale: text("rationale"),
     createdByUserId: uuid("created_by_user_id").references(() => usersTable.id, { onDelete: "set null" }),
     createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),

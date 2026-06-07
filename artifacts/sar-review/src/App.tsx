@@ -28,6 +28,11 @@ import Modality from "@/pages/modality";
 import Login from "@/pages/login";
 import Ingestion from "@/pages/ingestion";
 import ProgrammeWorkspace from "@/pages/programme-workspace";
+import ProgrammeMapPage from "@/pages/programme-map";
+import FrameworkHub from "@/pages/framework-hub";
+import ModuleBuilder from "@/pages/module-builder";
+import ReviewEnhancement from "@/pages/review-enhancement";
+import DataQuality from "@/pages/data-quality";
 import NotFound from "@/pages/not-found";
 
 const queryClient = new QueryClient({
@@ -60,8 +65,14 @@ function Router() {
         <Route path="/programme/digcomp" component={DigCompDashboard} />
         <Route path="/programme/entrecomp" component={EntreCompDashboard} />
         <Route path="/programme/import" component={ProgrammeImport} />
+        <Route path="/programme/map" component={ProgrammeMapPage} />
         <Route path="/programme/workspace" component={ProgrammeWorkspace} />
         <Route path="/programme" component={Programme} />
+        <Route path="/frameworks/:frameworkKey" component={FrameworkHub} />
+        <Route path="/frameworks" component={FrameworkHub} />
+        <Route path="/module-builder" component={ModuleBuilder} />
+        <Route path="/review-enhancement" component={ReviewEnhancement} />
+        <Route path="/data-quality" component={DataQuality} />
         <Route path="/assessment" component={Assessment} />
         <Route path="/modality" component={Modality} />
         <Route path="/ingestion" component={Ingestion} />

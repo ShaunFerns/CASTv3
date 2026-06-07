@@ -1,58 +1,38 @@
 import { useState, useEffect, useRef } from "react";
 import { Link, useLocation } from "wouter";
 import {
-  Home, Info, LayoutDashboard, Upload, PieChart, Sparkles, BarChart2,
-  Library, ArrowLeft, ClipboardCheck, Leaf, Monitor, Lock, LogOut, Menu, X, TrendingUp,
+  Home, Info, Upload, Database,
+  Library, ArrowLeft, ClipboardCheck, Lock, LogOut, Menu, X, Map, Layers3, Wrench, Settings,
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useAuth } from "@/lib/auth";
 
 const allNavItems = [
   { href: "/", label: "Home", icon: Home, exact: true },
-  { href: "/ingestion", label: "CAST v3 Ingestion", icon: Upload, exact: false },
-  { href: "/upload", label: "Upload Modules", icon: Upload, exact: false },
-  { href: "/dashboard", label: "SAR Dashboard", icon: LayoutDashboard, exact: false },
-  { href: "/free-electives", label: "Free Electives", icon: Sparkles, exact: false },
-  { href: "/sar-analytics", label: "Analytics Summary", icon: PieChart, exact: false },
-];
-
-const homeNavItems = [
-  { href: "/upload", label: "Upload Modules", icon: Upload, exact: false },
-  { href: "/summary", label: "Analytics", icon: PieChart, exact: false },
-];
-
-const summaryNavItems = [
-  { href: "/", label: "Home", icon: Home, exact: true },
-  { href: "/summary", label: "Analytics", icon: PieChart, exact: false },
-];
-
-const structureNavItems = [
-  { href: "/", label: "Home", icon: Home, exact: true },
-  { href: "/upload", label: "Upload Modules", icon: Upload, exact: false },
-];
-
-const programmeNavItems = [
-  { href: "/", label: "Home", icon: Home, exact: true },
-  { href: "/ingestion", label: "CAST v3 Ingestion", icon: Upload, exact: false },
-  { href: "/programme", label: "Programmes", icon: ClipboardCheck, exact: true },
+  { href: "/ingestion", label: "Upload Curriculum", icon: Upload, exact: false },
   { href: "/programme/workspace", label: "Programme Workspace", icon: Library, exact: false },
-  { href: "/programme/ga", label: "Graduate Attributes", icon: BarChart2, exact: false },
-  { href: "/programme/greencomp", label: "GreenComp", icon: Leaf, exact: false },
-  { href: "/programme/digcomp", label: "DigComp 3.0", icon: Monitor, exact: false },
-  { href: "/programme/entrecomp", label: "EntreComp", icon: TrendingUp, exact: false },
-  { href: "/programme/catalogue", label: "Module Catalogue", icon: Library, exact: false },
+  { href: "/programme/map", label: "Programme Map", icon: Map, exact: false },
+  { href: "/frameworks", label: "Framework Hub", icon: Layers3, exact: false },
+  { href: "/module-builder", label: "Module Builder", icon: Wrench, exact: false },
+  { href: "/review-enhancement", label: "Review & Enhancement", icon: ClipboardCheck, exact: false },
+  { href: "/data-quality", label: "Data Quality", icon: Database, exact: false },
+  { href: "/admin/login", label: "Administration", icon: Settings, exact: false },
 ];
 
 function getNavItems(location: string) {
-  if (location === "/") return homeNavItems;
-  if (location.startsWith("/summary")) return summaryNavItems;
-  if (location.startsWith("/structure")) return structureNavItems;
-  if (location.startsWith("/programme")) return programmeNavItems;
+  if (location.startsWith("/modules/")) {
+    return [
+      { href: "/", label: "Home", icon: Home, exact: true },
+      { href: "/programme/workspace", label: "Programme Workspace", icon: Library, exact: false },
+      { href: "/module-builder", label: "Module Builder", icon: Wrench, exact: false },
+      { href: "/data-quality", label: "Data Quality", icon: Database, exact: false },
+    ];
+  }
   return allNavItems;
 }
 
 const Logo = () => (
-  <Link href="/" className="flex items-center gap-3 mr-8 shrink-0">
+  <Link href="/" className="flex items-center gap-3 mr-4 shrink-0">
     <div className="flex items-center justify-center w-9 h-9 rounded" style={{ backgroundColor: "#F5A800" }}>
       <svg viewBox="0 0 24 24" fill="none" className="w-5 h-5" xmlns="http://www.w3.org/2000/svg">
         <path d="M12 3L2 8l10 5 10-5-10-5z" fill="#003865" />
@@ -62,7 +42,7 @@ const Logo = () => (
     </div>
     <div className="flex flex-col leading-none">
       <span className="font-bold text-base tracking-tight text-white">CAST</span>
-      <span className="text-[10px] font-medium tracking-wide" style={{ color: "#F5A800" }}>TU Dublin</span>
+      <span className="text-[10px] font-medium tracking-wide" style={{ color: "#F5A800" }}>CAST v3</span>
     </div>
   </Link>
 );
@@ -107,7 +87,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
 
           {/* ── Desktop nav ── */}
           {isAbout ? (
-            <nav className="hidden md:flex items-center gap-1 text-sm font-medium" aria-label="Main navigation">
+            <nav className="hidden md:flex items-center gap-1 text-xs font-medium" aria-label="Main navigation">
               <button
                 onClick={() => window.history.back()}
                 className="flex items-center gap-2 px-3 py-2 rounded text-white/70 hover:text-white hover:bg-white/10 transition-all"
@@ -132,7 +112,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                     key={item.href}
                     href={item.href}
                     aria-current={active ? "page" : undefined}
-                    className={`flex items-center gap-2 px-4 py-2 rounded transition-all ${
+                    className={`flex items-center gap-2 px-2.5 py-2 rounded transition-all ${
                       active
                         ? "text-[#003865] font-semibold"
                         : "text-white/80 hover:text-white hover:bg-white/10"

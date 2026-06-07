@@ -78,7 +78,7 @@ Phase 2 records retain selected legacy identifiers where needed to support incre
 | ----------------------------- | ------------------------------------------------------ |
 | `programme_maps`              | First-class programme maps                             |
 | `programme_map_versions`      | Versioned map snapshots                                |
-| `programme_map_layers`        | Framework, lens, priority, readiness or quality layers |
+| `programme_map_layers`        | Framework, lens, priority, assessment or quality layers |
 | `programme_map_layer_sources` | Sources used by each layer                             |
 | `programme_map_cells`         | Layer positions and values                             |
 | `programme_map_annotations`   | Human annotations                                      |
@@ -91,7 +91,7 @@ Phase 2 records retain selected legacy identifiers where needed to support incre
 | `institution_priorities`        | Institution-owned strategic priorities                 |
 | `institution_priority_versions` | Versioned priority definitions                         |
 | `priority_mappings`             | Priority relationships to curriculum/framework targets |
-| `priority_expectations`         | Expected scaffolding or achievement levels             |
+| `priority_expectations`         | Expected evidence maturity levels                      |
 
 ### Audit
 
@@ -154,7 +154,9 @@ Ingestion is pathway-neutral after materialisation. Downstream evidence and anal
 | `competency_evaluations`               | Observed evidence-based competency evaluations |
 | `competency_evaluation_evidence_links` | Evaluation provenance                          |
 
-Scaffolding values are `not_applicable`, `introduce`, `develop`, `integrate` and `demonstrate`.
+Evidence maturity values are `none`, `developing`, `consolidating` and `leading`.
+
+CAST uses these values to describe curriculum evidence maturity across framework layers. They are not learner attainment or learner progression claims.
 
 ### AI Claims and Human Review
 
@@ -207,7 +209,9 @@ Document and descriptor sections produce evidence items. Evidence items support 
 
 ### Expectations to Observations
 
-Programme attribute and competency expectations describe intended scaffolding. Competency evaluations and claims describe observed evidence. They remain separate so evidence never silently replaces programme intent.
+Programme attribute and competency expectations describe expected evidence maturity. Competency evaluations and claims describe observed evidence maturity. They remain separate so evidence never silently replaces programme intent.
+
+Phase 5 reuses the existing framework, lens, competency, programme expectation and evaluation tables for GreenComp, LifeComp, EntreComp and DigComp. No additional schema was required for framework layers, expected-versus-observed analysis or programme-owned framework foundations.
 
 ### AI to Human Authority
 

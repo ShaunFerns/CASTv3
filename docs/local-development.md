@@ -269,3 +269,143 @@ Phase 4A adds secured API routes:
 - `POST /api/ingestion/manual-module`
 
 These routes require the Phase 3B CAST identity session and institution context. The legacy admin-only session does not grant access to them unless the development-only CAST v3 preview bridge is explicitly enabled.
+
+### CAST v3 Programme Map Validation
+
+Phase 5A adds the programme map projection and framework-layer API/UI foundation without adding new database tables. The validation script creates a disposable map-ready programme, framework, programme-owned attribute, expectations, evidence item and data-quality indicator inside a transaction, then rolls the transaction back.
+
+```bash
+DATABASE_URL=postgresql://USER:PASSWORD@HOST:PORT/DATABASE?sslmode=require node scripts/phase5a-programme-map-validation.mjs
+```
+
+Expected output includes:
+
+```text
+PHASE5A_PROGRAMME_MAP_SMOKE=passed
+```
+
+### GreenComp Seed And Layer Validation
+
+Phase 5B seeds GreenComp as the first complete evidence-informed framework layer. The seed is idempotent and can be rerun safely.
+
+```bash
+DATABASE_URL=postgresql://USER:PASSWORD@HOST:PORT/DATABASE?sslmode=require node scripts/seed-greencomp.mjs
+DATABASE_URL=postgresql://USER:PASSWORD@HOST:PORT/DATABASE?sslmode=require node scripts/seed-greencomp.mjs
+```
+
+The second run should return the same object counts without duplicating records:
+
+```text
+GREENCOMP_SEED=ok
+DOMAINS=4
+COMPETENCIES=12
+```
+
+The GreenComp validation script creates one disposable programme, evidence item, competency evaluation and evidence link inside a transaction, then rolls back:
+
+```bash
+DATABASE_URL=postgresql://USER:PASSWORD@HOST:PORT/DATABASE?sslmode=require node scripts/phase5b-greencomp-validation.mjs
+```
+
+Expected output includes:
+
+```text
+PHASE5B_GREENCOMP_SMOKE=passed
+```
+
+### LifeComp Seed And Layer Validation
+
+Phase 5C seeds LifeComp as the second evidence-informed European framework layer. The seed is idempotent and can be rerun safely.
+
+```bash
+DATABASE_URL=postgresql://USER:PASSWORD@HOST:PORT/DATABASE?sslmode=require node scripts/seed-lifecomp.mjs
+DATABASE_URL=postgresql://USER:PASSWORD@HOST:PORT/DATABASE?sslmode=require node scripts/seed-lifecomp.mjs
+```
+
+The second run should return the same object counts without duplicating records:
+
+```text
+LIFECOMP_SEED=ok
+DOMAINS=3
+COMPETENCIES=9
+```
+
+The LifeComp validation script creates one disposable programme, evidence item, competency evaluation and evidence link inside a transaction, then rolls back:
+
+```bash
+DATABASE_URL=postgresql://USER:PASSWORD@HOST:PORT/DATABASE?sslmode=require node scripts/phase5c-lifecomp-validation.mjs
+```
+
+Expected output includes:
+
+```text
+PHASE5C_LIFECOMP_SMOKE=passed
+```
+
+### Evidence Maturity Terminology Migration
+
+CAST now uses evidence maturity terminology for framework layers:
+
+```text
+none
+developing
+consolidating
+leading
+```
+
+Display labels are:
+
+```text
+None
+Developing
+Consolidating
+Leading
+```
+
+Legacy progression/scaffolding values are migrated as:
+
+```text
+not_applicable -> none
+introduce      -> developing
+develop        -> consolidating
+integrate      -> leading
+demonstrate    -> leading
+```
+
+CAST uses these values to describe curriculum evidence maturity. They are not learner attainment or learner progression claims.
+
+### Phase 5 Multi-Framework Validation
+
+Phase 5 seeds European frameworks as independent frameworks, lenses and programme-map layers. Seeds are idempotent and can be rerun safely.
+
+```bash
+DATABASE_URL=postgresql://USER:PASSWORD@HOST:PORT/DATABASE?sslmode=require pnpm run db:seed:frameworks
+```
+
+The seed should create:
+
+```text
+GreenComp  4 domains / 12 competencies
+LifeComp   3 domains / 9 competencies
+EntreComp  3 domains / 15 competencies
+DigComp    5 domains / 21 competencies
+```
+
+Run all transaction-backed Phase 5 smoke checks:
+
+```bash
+DATABASE_URL=postgresql://USER:PASSWORD@HOST:PORT/DATABASE?sslmode=require pnpm run db:validate:phase5
+```
+
+Expected output includes:
+
+```text
+PHASE5A_PROGRAMME_MAP_SMOKE=passed
+PHASE5B_GREENCOMP_SMOKE=passed
+PHASE5C_GREENCOMP_EXPECTATIONS_SMOKE=passed
+PHASE5C_LIFECOMP_SMOKE=passed
+PHASE5F_ENTRECOMP_SMOKE=passed
+PHASE5G_DIGCOMP_SMOKE=passed
+```
+
+The validation scripts create disposable programme, structure, evidence, expectation and evaluation records inside transactions, then roll them back.

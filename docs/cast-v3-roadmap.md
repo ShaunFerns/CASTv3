@@ -109,14 +109,28 @@ Exit criteria: a programme team can ingest curriculum through at least one insti
 - Add lens versioning, testing and controlled activation.
 - Define output-schema validation.
 
-### 5C. Competency Expectations and Progression
+### 5C. Competency Expectations and Evidence Maturity
 
 - Configure programme-owned graduate attributes.
 - Define programme competency expectations by programme, stage, semester, pathway, group and module.
-- Analyse Introduce, Develop, Integrate and Demonstrate progression.
-- Distinguish intended scaffolding from observed evidence.
+- Analyse evidence maturity using None, Developing, Consolidating and Leading.
+- Distinguish expected evidence maturity from observed evidence maturity.
 
-Exit criteria: CAST can produce an evidence-linked progression analysis for one curated programme.
+Exit criteria: CAST can produce an evidence-linked evidence maturity analysis for one curated programme.
+
+Status: implemented for GreenComp as the first expectation-aware framework layer.
+
+### 5D-5I. Multi-Framework Layer Completion
+
+- Framework Hub and framework information pages.
+- LifeComp, EntreComp and DigComp framework/lens seeds.
+- Coverage, gap and strength summaries across European framework layers.
+- Programme-owned framework foundations for graduate attributes, themes, learning threads, signature learning experiences and programme outcomes.
+- Disciplinary and professional/accreditation framework foundations without seeding proprietary or context-specific frameworks.
+
+Exit criteria: CAST can show GreenComp, LifeComp, EntreComp, DigComp and programme-owned framework foundations as programme map layers using evidence maturity terminology.
+
+Status: implemented as additive Phase 5 foundation. Full AI classification, benchmarking and review workflows remain future phases.
 
 ## Phase 6: AI Claims and Human Review
 
@@ -134,7 +148,8 @@ Exit criteria: AI-supported findings are fully traceable and cannot become insti
 ### 7A. Layered Programme Maps
 
 - Deliver programme maps as a flagship programme-led workspace.
-- Combine framework, lens, progression, assessment, modality, readiness and data-quality layers.
+- Combine framework, lens, evidence maturity, assessment and data-quality layers.
+- Treat modality and UDL as Module Builder design supports that may later be aggregated into programme-level summaries.
 - Add annotations, approvals, comparison and exports.
 - Support map snapshots for review evidence packs.
 

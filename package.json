@@ -2,9 +2,22 @@
   "name": "workspace",
   "version": "0.0.0",
   "license": "MIT",
+  "packageManager": "pnpm@10.26.1",
+  "engines": {
+    "node": "24.14.1"
+  },
   "scripts": {
     "preinstall": "node ./scripts/enforce-pnpm.mjs",
     "build": "pnpm run typecheck && pnpm -r --if-present run build",
+    "db:migrate": "node ./scripts/apply-migrations.mjs",
+    "db:seed:greencomp": "node ./scripts/seed-greencomp.mjs",
+    "db:seed:lifecomp": "node ./scripts/seed-lifecomp.mjs",
+    "db:seed:entrecomp": "node ./scripts/seed-entrecomp.mjs",
+    "db:seed:digcomp": "node ./scripts/seed-digcomp.mjs",
+    "db:seed:curriculum-design-layers": "node ./scripts/seed-curriculum-design-layers.mjs",
+    "db:seed:frameworks": "node ./scripts/seed-greencomp.mjs && node ./scripts/seed-lifecomp.mjs && node ./scripts/seed-entrecomp.mjs && node ./scripts/seed-digcomp.mjs && node ./scripts/seed-curriculum-design-layers.mjs",
+    "db:validate:phase5": "node ./scripts/phase5a-programme-map-validation.mjs && node ./scripts/phase5b-greencomp-validation.mjs && node ./scripts/phase5c-greencomp-expectations-validation.mjs && node ./scripts/phase5c-lifecomp-validation.mjs && node ./scripts/phase5f-entrecomp-validation.mjs && node ./scripts/phase5g-digcomp-validation.mjs && node ./scripts/phase5j-curriculum-design-layers-validation.mjs",
+    "smoke:render-local": "node ./scripts/render-smoke.mjs",
     "typecheck:libs": "tsc --build",
     "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck"
   },

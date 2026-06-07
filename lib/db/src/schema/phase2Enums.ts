@@ -113,10 +113,14 @@ export const priorityMappingTargetTypeEnum = pgEnum(
   ],
 );
 
-export const priorityExpectationLevelEnum = pgEnum(
-  "priority_expectation_level",
-  ["not_applicable", "introduce", "develop", "integrate", "demonstrate"],
-);
+export const evidenceMaturityLevelEnum = pgEnum("evidence_maturity_level", [
+  "none",
+  "developing",
+  "consolidating",
+  "leading",
+]);
+
+export const priorityExpectationLevelEnum = evidenceMaturityLevelEnum;
 
 export const auditActorTypeEnum = pgEnum("audit_actor_type", [
   "user",
@@ -391,13 +395,7 @@ export const evidenceItemStatusEnum = pgEnum("evidence_item_status", [
   "archived",
 ]);
 
-export const scaffoldingLevelEnum = pgEnum("scaffolding_level", [
-  "not_applicable",
-  "introduce",
-  "develop",
-  "integrate",
-  "demonstrate",
-]);
+export const scaffoldingLevelEnum = evidenceMaturityLevelEnum;
 
 export const expectationScopeEnum = pgEnum("expectation_scope", [
   "programme",

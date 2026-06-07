@@ -1,124 +1,138 @@
 import { Link } from "wouter";
-import { ArrowRight, BarChart3, GitBranch, ClipboardCheck, Layers, GraduationCap } from "lucide-react";
+import { ArrowRight, BarChart3, CheckCircle2, ClipboardList, Database, Layers3, Map, Upload, Wrench } from "lucide-react";
+import { Card, CardContent } from "@/components/ui/card";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 
-const tools = [
+const journey = [
+  { label: "Evidence", description: "Upload and organise curriculum records.", icon: Upload, href: "/ingestion" },
+  { label: "Analyse", description: "Apply framework and design layers.", icon: Layers3, href: "/frameworks" },
+  { label: "Insights", description: "Visualise coverage, balance and gaps.", icon: Map, href: "/programme/map" },
+  { label: "Review", description: "Turn findings into team decisions.", icon: ClipboardList, href: "/review-enhancement" },
+  { label: "Act", description: "Plan improvements and monitor progress.", icon: CheckCircle2, href: "/review-enhancement" },
+];
+
+const workspaces = [
   {
-    href: "/sar",
-    icon: GraduationCap,
-    title: "SAR + Free Electives",
-    description: "Select and review modules for inclusion using evidence-based alignment and structured analysis.",
-    color: "#003865",
-    available: true,
+    href: "/ingestion",
+    icon: Upload,
+    title: "Upload Curriculum",
+    description: "Import Akari-compatible data, PDFs or manually entered module descriptors.",
+    accent: "blue",
   },
   {
-    href: "/structure",
-    icon: GitBranch,
-    title: "Structure Explorer",
-    description: "Explore similarity, clustering, and structural patterns across the curriculum.",
-    color: "#003865",
-    available: true,
+    href: "/programme/workspace",
+    icon: Database,
+    title: "Programme Workspace",
+    description: "Reconcile source data into curated programme structures.",
+    accent: "emerald",
   },
   {
-    href: "/programme",
-    icon: ClipboardCheck,
-    title: "Programme Mapping",
-    description: "Map programmes against Graduate Attributes and curriculum lenses to assess coverage and balance.",
-    color: "#003865",
-    available: true,
+    href: "/programme/map",
+    icon: Map,
+    title: "Programme Map",
+    description: "Explore curriculum coverage, alignment and Assessment as switchable overlays.",
+    accent: "violet",
   },
   {
-    href: "/assessment",
+    href: "/frameworks",
+    icon: Layers3,
+    title: "Framework Hub",
+    description: "Manage evidence-informed layers such as GreenComp, DigComp, LifeComp and programme attributes.",
+    accent: "amber",
+  },
+  {
+    href: "/module-builder",
+    icon: Wrench,
+    title: "Module Builder",
+    description: "Foundation for Modality, UDL, Assessment Design and descriptor improvement support.",
+    accent: "cyan",
+  },
+  {
+    href: "/review-enhancement",
     icon: BarChart3,
-    title: "Assessment Mapping",
-    description: "Review alignment between programme outcomes, module outcomes, assessment, and attributes.",
-    color: "#003865",
-    available: false,
-  },
-  {
-    href: "/modality",
-    icon: Layers,
-    title: "Modality",
-    description: "Support structured decisions about module and programme delivery modes.",
-    color: "#003865",
-    available: false,
+    title: "Review & Enhancement",
+    description: "Foundation for readiness, SWOT and action planning workflows.",
+    accent: "rose",
   },
 ];
 
+const accentStyles: Record<string, string> = {
+  blue: "bg-blue-100 text-blue-800",
+  emerald: "bg-emerald-100 text-emerald-800",
+  violet: "bg-violet-100 text-violet-800",
+  amber: "bg-amber-100 text-amber-800",
+  cyan: "bg-cyan-100 text-cyan-800",
+  rose: "bg-rose-100 text-rose-800",
+};
+
 export default function Home() {
   return (
-    <div className="space-y-12 animate-in fade-in duration-500 pb-12">
-      {/* Hero */}
-      <div className="text-center space-y-5 pt-8">
-        <div
-          className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-semibold"
-          style={{ backgroundColor: "#F5A800", color: "#003865" }}
-        >
-          TU Dublin · Arts Programme
+    <div className="mx-auto max-w-7xl space-y-8 p-4 sm:p-6">
+      <section className="grid gap-8 lg:grid-cols-[1fr_420px] lg:items-center">
+        <div>
+          <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-100">Curriculum intelligence and evidence platform</Badge>
+          <h1 className="mt-4 max-w-3xl text-4xl font-bold leading-tight tracking-tight sm:text-5xl" style={{ color: "#003865" }}>
+            Evidence. Analyse. Insights. Review. Act.
+          </h1>
+          <p className="mt-4 max-w-2xl text-lg leading-8 text-slate-600">
+            CAST helps programme teams turn curriculum evidence into structured understanding, human review and
+            improvement action.
+          </p>
+          <div className="mt-6 flex flex-wrap gap-3">
+            <Button asChild style={{ backgroundColor: "#003865" }}>
+              <Link href="/ingestion">
+                Upload curriculum
+                <ArrowRight className="ml-2 h-4 w-4" />
+              </Link>
+            </Button>
+            <Button asChild variant="outline">
+              <Link href="/programme/map">Open Programme Map</Link>
+            </Button>
+          </div>
         </div>
-        <h1
-          className="text-4xl sm:text-5xl font-extrabold tracking-tight leading-tight"
-          style={{ color: "#003865" }}
-        >
-          CAST
-          <br />
-          <span style={{ color: "#F5A800" }}>Curriculum Analysis & Structuring Tool</span>
-        </h1>
-        <p className="text-lg text-slate-600 max-w-2xl mx-auto leading-relaxed">
-          A suite of tools to help programme teams analyse, map, and improve curriculum design.
-          Select a tool to get started.
-        </p>
-      </div>
 
-      {/* Tool cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 max-w-5xl mx-auto">
-        {tools.map((tool) => {
-          const Icon = tool.icon;
-          const card = (
-            <div
-              className={`group relative bg-white rounded-xl border-2 p-7 shadow-sm transition-all duration-200 h-full flex flex-col gap-3 ${
-                tool.available
-                  ? "border-slate-200 hover:border-[#003865] hover:shadow-lg hover:-translate-y-0.5 cursor-pointer"
-                  : "border-slate-100 opacity-60 cursor-default"
-              }`}
-            >
-              <div
-                className="inline-flex items-center justify-center w-12 h-12 rounded-lg"
-                style={{ backgroundColor: tool.available ? tool.color : "#94a3b8" }}
-              >
-                <Icon className="w-6 h-6 text-white" />
-              </div>
-              <div className="flex-1">
-                <div className="flex items-center gap-2 mb-1.5">
-                  <h2 className="text-lg font-bold" style={{ color: "#003865" }}>
-                    {tool.title}
-                  </h2>
-                  {!tool.available && (
-                    <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 uppercase tracking-wide">
-                      Coming soon
-                    </span>
-                  )}
-                </div>
-                <p className="text-slate-500 text-sm leading-relaxed">{tool.description}</p>
-              </div>
-              {tool.available && (
-                <div className="flex items-center gap-1 text-sm font-semibold mt-1 opacity-0 group-hover:opacity-100 transition-opacity" style={{ color: "#003865" }}>
-                  Open tool <ArrowRight className="w-4 h-4" />
-                </div>
-              )}
-            </div>
-          );
+        <Card className="border-blue-100 bg-white shadow-sm">
+          <CardContent className="space-y-3 p-5">
+            {journey.map((step, index) => {
+              const Icon = step.icon;
+              return (
+                <Link key={step.label} href={step.href} className="flex items-center gap-3 rounded border border-slate-100 p-3 transition hover:border-blue-200 hover:bg-blue-50">
+                  <div className="flex h-10 w-10 items-center justify-center rounded bg-blue-100 text-blue-800">
+                    <Icon className="h-5 w-5" />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-sm font-semibold text-slate-900">{index + 1}. {step.label}</div>
+                    <div className="text-xs text-slate-500">{step.description}</div>
+                  </div>
+                  <ArrowRight className="h-4 w-4 text-slate-300" />
+                </Link>
+              );
+            })}
+          </CardContent>
+        </Card>
+      </section>
 
-          return tool.available ? (
-            <Link key={tool.href} href={tool.href} className="block h-full">
-              {card}
+      <section className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
+        {workspaces.map((workspace) => {
+          const Icon = workspace.icon;
+          return (
+            <Link key={workspace.href} href={workspace.href}>
+              <Card className="h-full border-slate-200 transition hover:-translate-y-0.5 hover:border-blue-200 hover:shadow-md">
+                <CardContent className="flex h-full gap-4 p-5">
+                  <div className={`flex h-12 w-12 shrink-0 items-center justify-center rounded ${accentStyles[workspace.accent]}`}>
+                    <Icon className="h-6 w-6" />
+                  </div>
+                  <div>
+                    <h2 className="font-semibold text-slate-900">{workspace.title}</h2>
+                    <p className="mt-2 text-sm leading-6 text-slate-600">{workspace.description}</p>
+                  </div>
+                </CardContent>
+              </Card>
             </Link>
-          ) : (
-            <div key={tool.href} className="block h-full">
-              {card}
-            </div>
           );
         })}
-      </div>
+      </section>
     </div>
   );
 }

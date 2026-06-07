@@ -92,7 +92,7 @@ export default function Home() {
           className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-sm font-semibold"
           style={{ backgroundColor: "#F5A800", color: "#003865" }}
         >
-          TU Dublin · Arts Programme
+          Curriculum Intelligence Platform
         </div>
         <h1
           className="text-4xl sm:text-5xl font-extrabold tracking-tight leading-tight"

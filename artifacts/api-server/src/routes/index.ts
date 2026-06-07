@@ -12,6 +12,7 @@ import authRouter from "./authRoutes/index.js";
 import securityRouter from "./security/index.js";
 import ingestionRouter from "./ingestion/index.js";
 import programmeWorkspaceRouter from "./programmeWorkspace/index.js";
+import programmeMapRouter from "./programmeMap/index.js";
 
 const router: IRouter = Router();
 
@@ -20,6 +21,7 @@ router.use(healthRouter);
 router.use(securityRouter);
 router.use(ingestionRouter);
 router.use(programmeWorkspaceRouter);
+router.use(programmeMapRouter);
 router.use(modulesRouter);
 router.use(dashboardRouter);
 router.use(exportRouter);

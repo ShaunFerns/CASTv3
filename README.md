@@ -46,6 +46,7 @@ The following foundation milestones have been completed:
 - **Curriculum ingestion pipeline**: Phase 4A added ingestion scaffolding for institutional imports, single descriptor uploads/text, and manual module entry, with evidence materialisation and data quality checks.
 - **Curated programme workspace**: Phase 4B added source-to-curated programme version creation, reconciliation, editable curated structures, source comparison, data quality checks, and map-preview projection.
 - **Development preview bridge**: Phase 4C added a development-only bridge so the legacy admin login can create a real CAST v3 session context for safe local preview of secured CAST v3 screens.
+- **Multi-framework programme maps**: Phase 5 adds GreenComp, LifeComp, EntreComp and DigComp framework layers, evidence maturity terminology, expected-versus-observed analysis, Framework Hub pages, and programme-owned framework foundations.
 
 ## Run Locally
 
@@ -163,6 +164,7 @@ Key database expectations:
 - [CAST v3 schema summary](docs/cast-v3-schema-summary.md)
 - [CAST v3 roadmap](docs/cast-v3-roadmap.md)
 - [Phase 3B identity and sessions](docs/cast-v3-phase3b-identity-sessions.md)
+- [Render deployment](docs/render-deployment.md)
 
 ## Legacy Status
 

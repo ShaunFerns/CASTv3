@@ -25,12 +25,20 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { SAR_OPTIONS, SCORE_BANDS, STATUS_OPTIONS, TU_DUBLIN_SCHOOLS } from "@/lib/constants";
 
 import { useCalibration, calcCalibratedBand } from "@/lib/calibration";
-import { AlertTriangle, ChevronLeft, ChevronRight, Download, Search, Trash2, X } from "lucide-react";
+import { AlertTriangle, ChevronLeft, ChevronRight, ClipboardList, Download, Layers3, Map, Search, Trash2, Upload, Wrench, X } from "lucide-react";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useQueryClient } from "@tanstack/react-query";
 import { useToast } from "@/hooks/use-toast";
 
+const castV3Shortcuts = [
+  { href: "/ingestion", label: "Upload Curriculum", icon: Upload },
+  { href: "/programme/workspace", label: "Programme Workspace", icon: ClipboardList },
+  { href: "/programme/map", label: "Programme Map", icon: Map },
+  { href: "/frameworks", label: "Framework Hub", icon: Layers3 },
+  { href: "/module-builder", label: "Module Builder", icon: Wrench },
+  { href: "/review-enhancement", label: "Review & Enhancement", icon: ClipboardList },
+];
 
 export default function Dashboard() {
   const { uplift } = useCalibration();
@@ -136,6 +144,28 @@ export default function Dashboard() {
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-2 duration-500">
+      <div className="rounded-lg border border-blue-100 bg-white p-5 shadow-sm">
+        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+          <div>
+            <h2 className="text-xl font-bold" style={{ color: "#003865" }}>CAST v3 workflow</h2>
+            <p className="mt-1 text-sm text-slate-600">Evidence to Analyse to Insights to Review to Act.</p>
+          </div>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6">
+            {castV3Shortcuts.map((shortcut) => {
+              const Icon = shortcut.icon;
+              return (
+                <Button key={shortcut.href} asChild variant="outline" className="justify-start bg-white">
+                  <Link href={shortcut.href}>
+                    <Icon className="mr-2 h-4 w-4" />
+                    {shortcut.label}
+                  </Link>
+                </Button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h1 className="text-3xl font-bold tracking-tight" style={{ color: "#003865" }}>Dashboard</h1>

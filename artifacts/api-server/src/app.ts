@@ -11,6 +11,38 @@ import { PostgresSessionStore } from "./lib/postgresSessionStore";
 import { requestIdMiddleware } from "./lib/requestId";
 
 const app: Express = express();
+const isProduction = process.env.NODE_ENV === "production";
+
+function sessionSecret(): string {
+  const secret = process.env.SESSION_SECRET;
+  const unsafeSecrets = new Set([
+    "cast-dev-secret-change-in-production",
+    "change-me",
+    "replace-me",
+    "local-development-secret-change-me-32chars",
+  ]);
+
+  if (isProduction) {
+    if (!secret || secret.length < 32 || unsafeSecrets.has(secret)) {
+      throw new Error("SESSION_SECRET must be set to a strong value of at least 32 characters in production.");
+    }
+  }
+
+  return secret ?? "cast-dev-secret-change-in-production";
+}
+
+function allowedCorsOrigins(): Set<string> {
+  return new Set(
+    (process.env.CAST_ALLOWED_ORIGINS ?? "")
+      .split(",")
+      .map((origin) => origin.trim())
+      .filter(Boolean),
+  );
+}
+
+const productionCorsOrigins = allowedCorsOrigins();
+
+app.set("trust proxy", 1);
 
 app.use(requestIdMiddleware());
 app.use(
@@ -33,17 +65,34 @@ app.use(
     },
   }),
 );
-app.use(cors({ origin: true, credentials: true }));
+app.use(
+  cors({
+    origin(origin, callback) {
+      if (!origin) {
+        callback(null, true);
+        return;
+      }
+
+      if (!isProduction || productionCorsOrigins.has(origin)) {
+        callback(null, true);
+        return;
+      }
+
+      callback(null, false);
+    },
+    credentials: true,
+  }),
+);
 app.use(
   session({
     name: "cast.sid",
     store: new PostgresSessionStore(),
-    secret: process.env.SESSION_SECRET ?? "cast-dev-secret-change-in-production",
+    secret: sessionSecret(),
     resave: false,
     saveUninitialized: false,
     cookie: {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure: isProduction,
       sameSite: "lax",
       maxAge: 12 * 60 * 60 * 1000,
     },
