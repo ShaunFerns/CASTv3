@@ -1,54 +1,75 @@
-# CAST v3
+# CAST
 
-CAST stands for **Curriculum Analysis, Strategy and Transformation**.
+**Curriculum Analysis and Strategy Tool**
 
-CAST v3 is a curriculum intelligence and evidence platform for higher education. It is being evolved from a Replit prototype into a production-ready platform that helps programme teams collect evidence, understand curriculum structure, analyse frameworks and lenses, improve descriptors, prepare for review and validation, and plan enhancement activity.
+CAST is an evidence-informed curriculum intelligence and enhancement platform for higher education.
 
-## Product Purpose
+CAST helps programme teams turn curriculum evidence into structured understanding, review-ready insight and practical enhancement action. The platform is being evolved from an early Replit prototype into a production-ready CAST v3 product for programme review, validation, revalidation, accreditation, curriculum enhancement, DELTA-style readiness, SWOT analysis and action planning.
 
-CAST helps higher education teams move from fragmented curriculum documentation to evidence-informed curriculum insight and action.
+## Core Components
 
-The platform is designed to support:
+CAST v3 is organised around seven core components:
 
-- programme review
-- validation and revalidation
-- accreditation
-- curriculum enhancement
-- DELTA readiness
-- SWOT analysis
-- action planning
-- evidence-linked curriculum intelligence
+1. **Upload Curriculum**
+   Import curriculum evidence from Akari-compatible CSV/XLSX exports, module descriptor PDFs, text extracts and manual module entry.
 
-CAST v3 is programme-led and evidence-first. AI outputs are treated as claims that must remain linked to evidence and open to human review. Descriptor improvement is supported without overwriting institutional truth.
+2. **Programme Workspace**
+   Reconcile source programme/module data into curated programme versions, structures, stages, semesters, pathways, option groups and module placements.
+
+3. **Programme Map**
+   Visualise the curated programme structure as the base map, with switchable evidence-informed overlays for frameworks, programme attributes, assessment, data quality and future accreditation layers.
+
+4. **Framework Hub**
+   Manage and explain framework/lens layers including GreenComp, LifeComp, EntreComp, DigComp, programme-owned attributes, disciplinary frameworks and professional standards.
+
+5. **Module Builder**
+   Foundation for module-level enhancement support, including Modality, UDL, Assessment Design and Framework Alignment. Module Builder is where future descriptor improvement workflows should live.
+
+6. **Review & Enhancement**
+   Foundation for readiness checks, SWOT, action planning, review cycles and monitored enhancement activity.
+
+7. **Data Quality**
+   Surface missing, incomplete, duplicated, stale or weak curriculum data without silently cleaning or overwriting source evidence.
+
+## Operating Model
+
+CAST v3 follows the workflow:
+
+```text
+Evidence -> Analyse -> Insights -> Review -> Act
+```
+
+The architecture separates different kinds of work:
+
+- **Programme Map** answers: what exists across the curriculum?
+- **Module Builder** answers: how should this module be improved?
+- **Review & Enhancement** answers: what should we do next?
+
+Assessment remains a Programme Map layer because assessment balance, diversity, clustering and workload are programme-level design concerns. Modality and UDL are positioned inside Module Builder as module-level design supports, with possible future programme-level aggregation.
 
 ## Current Status
 
 CAST v3 is in active transformation.
 
-The current repository still contains legacy prototype workflows, including earlier SARs, Free Electives and Structure Explorer functionality. Those workflows remain temporarily available while the new CAST v3 foundation is built beside them.
+Completed foundation work includes:
 
-All new development should be **CAST v3-first**:
+- production foundation outside Replit
+- validated Supabase/PostgreSQL database baseline
+- persistent sessions, roles, permissions and tenant-aware API middleware
+- audit writer and security event logging
+- curriculum ingestion pipeline
+- curated programme workspace
+- development preview bridge
+- programme map and framework/lens architecture
+- GreenComp, LifeComp, EntreComp and DigComp seeds
+- CAST evidence maturity terminology: None, Developing, Consolidating, Leading
+- Assessment curriculum design layer
+- Module Builder, Review & Enhancement and Data Quality navigation foundations
+- Render deployment hardening using Supabase PostgreSQL
 
-- tenant-aware
-- evidence-linked
-- database-backed
-- auditable
-- compatible with Supabase/PostgreSQL
-- designed for higher education programme teams
+Legacy prototype workflows remain temporarily in the repository, including earlier SAR, Free Electives, Structure Explorer and prototype administration functionality. New work should be CAST v3-first.
 
-## Completed Milestones
-
-The following foundation milestones have been completed:
-
-- **Production foundation**: Replit-specific assumptions were isolated or removed, standard PNPM setup was restored, local build commands were documented, and the app can run outside Replit.
-- **Validated Supabase database**: CAST v3 migrations through Phase 4A have been validated against Supabase using a direct database connection.
-- **Security/session foundation**: Phase 3B introduced persistent PostgreSQL sessions, canonical roles and permissions, programme memberships, tenant-aware request context middleware, and audit event infrastructure.
-- **Curriculum ingestion pipeline**: Phase 4A added ingestion scaffolding for institutional imports, single descriptor uploads/text, and manual module entry, with evidence materialisation and data quality checks.
-- **Curated programme workspace**: Phase 4B added source-to-curated programme version creation, reconciliation, editable curated structures, source comparison, data quality checks, and map-preview projection.
-- **Development preview bridge**: Phase 4C added a development-only bridge so the legacy admin login can create a real CAST v3 session context for safe local preview of secured CAST v3 screens.
-- **Multi-framework programme maps**: Phase 5 adds GreenComp, LifeComp, EntreComp and DigComp framework layers, evidence maturity terminology, expected-versus-observed analysis, Framework Hub pages, and programme-owned framework foundations.
-
-## Run Locally
+## Local Development
 
 Install dependencies:
 
@@ -75,16 +96,10 @@ ADMIN_USERNAME=admin
 ADMIN_PASSWORD=change-me
 ```
 
-Run the frontend:
+Run type checks:
 
 ```bash
-PORT=3000 BASE_PATH=/ pnpm --filter @workspace/sar-review run dev
-```
-
-Run the API server:
-
-```bash
-PORT=3000 NODE_ENV=development pnpm --filter @workspace/api-server run dev
+pnpm run typecheck
 ```
 
 Build the frontend:
@@ -99,19 +114,43 @@ Build the backend:
 NODE_ENV=production pnpm --filter @workspace/api-server run build
 ```
 
-Run type checks:
+More detailed setup notes are in [docs/local-development.md](docs/local-development.md).
+
+## Database And Seeds
+
+CAST v3 uses PostgreSQL with Drizzle schema definitions and SQL migrations.
+
+Apply migrations:
 
 ```bash
-pnpm run typecheck
+node scripts/apply-migrations.mjs
 ```
 
-More detailed setup notes are in [docs/local-development.md](docs/local-development.md).
+Seed framework and design layers:
+
+```bash
+pnpm run db:seed:frameworks
+```
+
+Fresh CAST v3 deployments do not require legacy prototype tables. Optional legacy compatibility views are separate and should only be used during prototype migration.
+
+## Supabase Notes
+
+The production database target is Supabase PostgreSQL. The browser should not directly mutate CAST v3 tables; browser requests should go through the CAST API.
+
+Important rules:
+
+- apply migrations in order
+- validate schema changes against a disposable or controlled database first
+- do not seed real institutional data into smoke tests
+- treat uploaded documents, extracted text, source exports and analysis outputs as sensitive curriculum data
+- keep RLS planning separate until the API/session foundation is fully ready
 
 ## Preview Mode
 
-CAST v3 secured routes require a Phase 3B CAST identity session and institution context. During development only, the preview bridge can connect the existing legacy admin login to a seeded CAST v3 preview user and institution.
+CAST v3 secured routes require a CAST identity session and institution context. During development only, the preview bridge can connect the legacy admin login to a seeded CAST v3 preview user and institution.
 
-Enable it only in local or preview environments:
+Enable only in local or preview environments:
 
 ```bash
 CAST_V3_PREVIEW_BRIDGE=true
@@ -121,56 +160,36 @@ CAST_V3_PREVIEW_USER_EMAIL=preview-admin@cast.local
 CAST_V3_PREVIEW_USER_NAME="CAST Preview Admin"
 ```
 
-Safety rules:
+The bridge is disabled by default and ignored in production. Do not use preview mode as production authentication.
 
-- The bridge is disabled by default.
-- The bridge is ignored when `NODE_ENV=production`.
-- It does not bypass Phase 3B middleware.
-- It creates or reuses real preview institution, user, membership and role records.
-- It stores `castUserId` and selected institution context in the existing session only after a successful legacy admin login.
-- It writes an audit event for bridge-based session creation.
+## Render Deployment
 
-With preview mode enabled, local testers can use:
+CAST v3 is configured for Render as a web service using the existing Supabase PostgreSQL database. Do not provision Render Postgres for the current deployment path.
 
-- `/api/security/context`
-- `/ingestion`
-- `/programme/workspace`
-- `/api/ingestion/*`
-- `/api/programme-workspace/*`
+Render should provide:
 
-Do not use preview mode as production authentication.
+- `DATABASE_URL`
+- `SESSION_SECRET`
+- `ADMIN_USERNAME`
+- `ADMIN_PASSWORD`
+- `AI_INTEGRATIONS_OPENAI_API_KEY`
+- `AI_INTEGRATIONS_OPENAI_BASE_URL`
+- `BASE_PATH=/`
+- `NODE_ENV=production`
+- `CAST_V3_PREVIEW_BRIDGE=false`
 
-## Database And Supabase Notes
-
-CAST v3 uses PostgreSQL with Drizzle schema definitions and SQL migrations.
-
-Fresh CAST v3 deployments do not require legacy prototype tables. Optional legacy compatibility views are kept separate and are only for prototype migration environments.
-
-Supabase validation has confirmed the clean production baseline and the CAST v3 Phase 4A ingestion tables. Supabase MCP migration application was not used for final validation where direct database validation was required; direct `DATABASE_URL` validation was used instead.
-
-Key database expectations:
-
-- Apply core migrations in order.
-- Use a disposable database for migration testing before shared environments.
-- Do not seed real institutional data into development or smoke-test databases.
-- Treat uploaded documents, extracted text, source exports and analysis outputs as sensitive curriculum data.
-- Use the API server as the browser boundary; the browser should not mutate CAST v3 tables directly.
+See [docs/render-deployment.md](docs/render-deployment.md).
 
 ## Key Documentation
 
 - [Local development](docs/local-development.md)
 - [Repository audit](docs/repository-audit.md)
 - [CAST v3 architecture](docs/cast-v3-architecture.md)
+- [Post-Phase 5 architecture](docs/cast-v3-post-phase5-architecture.md)
 - [CAST v3 schema summary](docs/cast-v3-schema-summary.md)
 - [CAST v3 roadmap](docs/cast-v3-roadmap.md)
 - [Phase 3B identity and sessions](docs/cast-v3-phase3b-identity-sessions.md)
 - [Render deployment](docs/render-deployment.md)
-
-## Legacy Status
-
-Legacy workflows remain temporarily in the repository so existing prototype functionality is not broken during the transition.
-
-Legacy areas include earlier SARs, Free Electives, Structure Explorer and prototype administration flows. These should be treated as migration-era functionality. New work should use the CAST v3 domain model, tenant-aware API services, audit writer, and evidence-first curriculum pipeline.
 
 ## Security Warning
 

@@ -26,7 +26,7 @@ import ModuleCatalogue from "@/pages/module-catalogue";
 import Assessment from "@/pages/assessment";
 import Modality from "@/pages/modality";
 import Login from "@/pages/login";
-import Ingestion from "@/pages/ingestion";
+import UploadCurriculum from "@/pages/ingestion";
 import ProgrammeWorkspace from "@/pages/programme-workspace";
 import ProgrammeMapPage from "@/pages/programme-map";
 import FrameworkHub from "@/pages/framework-hub";
@@ -75,7 +75,7 @@ function Router() {
         <Route path="/data-quality" component={DataQuality} />
         <Route path="/assessment" component={Assessment} />
         <Route path="/modality" component={Modality} />
-        <Route path="/ingestion" component={Ingestion} />
+        <Route path="/ingestion" component={UploadCurriculum} />
         <Route path="/admin/login" component={Login} />
         <Route component={NotFound} />
       </Switch>
