@@ -113,7 +113,33 @@ type EvidenceClaim = {
     relevance?: number | null;
     relationship: string;
   }>;
+  review: {
+    status: ClaimReviewStatus;
+    isInstitutionalFinding: boolean;
+    findingText?: string | null;
+    latestReview?: ClaimReview | null;
+  };
+  reviewHistory: ClaimReview[];
   createdAt?: string | null;
+};
+
+type ClaimReviewStatus = "not_reviewed" | "accepted" | "rejected" | "amended" | "clarification_required" | "not_applicable";
+type ClaimReviewDecision = "accept" | "reject" | "amend" | "request_clarification" | "not_applicable";
+
+type ClaimReview = {
+  id: string;
+  decision: ClaimReviewDecision;
+  status: ClaimReviewStatus;
+  rationale?: string | null;
+  amendedText?: string | null;
+  reviewer?: { id?: string | null; name?: string | null; email?: string | null };
+  createdAt?: string | null;
+};
+
+type ClaimReviewResponse = {
+  claim: EvidenceClaim;
+  review: ClaimReview;
+  message: string;
 };
 
 type ModuleClaimsResponse = {
@@ -224,6 +250,25 @@ function confidenceLabel(value: number | null | undefined) {
   return typeof value === "number" ? `${Math.round(value * 100)}% confidence` : "Confidence not recorded";
 }
 
+function reviewStatusLabel(status: ClaimReviewStatus) {
+  const labels: Record<ClaimReviewStatus, string> = {
+    not_reviewed: "Not Reviewed",
+    accepted: "Accepted",
+    rejected: "Rejected",
+    amended: "Amended",
+    clarification_required: "Clarification Required",
+    not_applicable: "Not Applicable",
+  };
+  return labels[status];
+}
+
+function reviewStatusClass(status: ClaimReviewStatus) {
+  if (status === "accepted" || status === "amended") return "bg-emerald-100 text-emerald-800 hover:bg-emerald-100";
+  if (status === "rejected" || status === "not_applicable") return "bg-slate-100 text-slate-700 hover:bg-slate-100";
+  if (status === "clarification_required") return "bg-amber-100 text-amber-800 hover:bg-amber-100";
+  return "bg-violet-100 text-violet-800 hover:bg-violet-100";
+}
+
 function shortRunId(id: string) {
   return id.slice(0, 8);
 }
@@ -281,6 +326,8 @@ export default function ModuleBuilder() {
   const [loading, setLoading] = useState(false);
   const [claimsLoading, setClaimsLoading] = useState(false);
   const [generatingClaims, setGeneratingClaims] = useState(false);
+  const [reviewingClaimId, setReviewingClaimId] = useState<string | null>(null);
+  const [reviewDrafts, setReviewDrafts] = useState<Record<string, { rationale: string; amendedText: string }>>({});
 
   async function loadClaims(moduleId: string) {
     setClaimsLoading(true);
@@ -336,6 +383,30 @@ export default function ModuleBuilder() {
       setClaimsError(err instanceof Error ? err.message : "GreenComp claims could not be generated.");
     } finally {
       setGeneratingClaims(false);
+    }
+  }
+
+  async function submitClaimReview(claim: EvidenceClaim, decision: ClaimReviewDecision) {
+    const draft = reviewDrafts[claim.id] ?? { rationale: "", amendedText: "" };
+    setReviewingClaimId(claim.id);
+    setClaimsError(null);
+    setClaimsMessage(null);
+    try {
+      const result = await api<ClaimReviewResponse>(`/api/claims/${encodeURIComponent(claim.id)}/review`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          decision,
+          rationale: draft.rationale,
+          amendedText: draft.amendedText,
+        }),
+      });
+      setClaims((current) => current.map((candidate) => candidate.id === result.claim.id ? result.claim : candidate));
+      setClaimsMessage(result.message);
+    } catch (err) {
+      setClaimsError(err instanceof Error ? err.message : "Claim review could not be recorded.");
+    } finally {
+      setReviewingClaimId(null);
     }
   }
 
@@ -491,13 +562,21 @@ export default function ModuleBuilder() {
                     {claims.map((claim) => (
                       <div key={claim.id} className="rounded border border-slate-200 bg-white p-4">
                         <div className="flex flex-wrap items-center gap-2">
-                          <Badge className="bg-violet-100 text-violet-800 hover:bg-violet-100">AI-supported claim</Badge>
-                          <Badge variant="outline">Not yet reviewed</Badge>
+                          <Badge className={claim.review.isInstitutionalFinding ? "bg-emerald-100 text-emerald-800 hover:bg-emerald-100" : "bg-violet-100 text-violet-800 hover:bg-violet-100"}>
+                            {claim.review.isInstitutionalFinding ? "Reviewed finding" : "AI-supported claim"}
+                          </Badge>
+                          <Badge className={reviewStatusClass(claim.review.status)}>Review: {reviewStatusLabel(claim.review.status)}</Badge>
                           <Badge variant="outline">{claim.framework?.name ?? "Framework"} {claim.framework?.versionLabel ?? ""}</Badge>
                           <Badge variant="outline">{confidenceLabel(claim.confidence)}</Badge>
                         </div>
                         <h3 className="mt-3 font-semibold text-slate-950">{claim.title ?? "Evidence claim"}</h3>
                         <p className="mt-2 text-sm leading-6 text-slate-700">{claim.claimText}</p>
+                        {claim.review.isInstitutionalFinding && claim.review.findingText && (
+                          <div className="mt-3 rounded border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
+                            <div className="font-semibold">Reviewed Finding</div>
+                            <p className="mt-1 leading-6">{claim.review.findingText}</p>
+                          </div>
+                        )}
                         {claim.rationale && <p className="mt-2 text-sm leading-6 text-slate-600">{claim.rationale}</p>}
                         <div className="mt-3 grid gap-2 text-xs text-slate-500 md:grid-cols-3">
                           <span>Analysis run: {shortRunId(claim.analysisRun.id)}</span>
@@ -520,6 +599,58 @@ export default function ModuleBuilder() {
                               <p className="leading-5">{item.evidenceText ?? "Evidence text is not available for preview."}</p>
                             </div>
                           ))}
+                        </div>
+                        <div className="mt-4 rounded border border-slate-200 bg-slate-50 p-3">
+                          <div className="flex flex-wrap items-center justify-between gap-3">
+                            <div>
+                              <div className="text-sm font-semibold text-slate-950">Human Review</div>
+                              <p className="mt-1 text-sm text-slate-600">Review the claim with its evidence visible. The original claim text is preserved.</p>
+                            </div>
+                            <Badge variant="outline" className="bg-white">{claim.reviewHistory.length} review{claim.reviewHistory.length === 1 ? "" : "s"}</Badge>
+                          </div>
+                          <div className="mt-3 grid gap-3">
+                            <textarea
+                              className="min-h-20 rounded border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-400"
+                              placeholder="Review rationale or clarification question..."
+                              value={reviewDrafts[claim.id]?.rationale ?? ""}
+                              onChange={(event) => setReviewDrafts((current) => ({
+                                ...current,
+                                [claim.id]: { rationale: event.target.value, amendedText: current[claim.id]?.amendedText ?? "" },
+                              }))}
+                            />
+                            <textarea
+                              className="min-h-20 rounded border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-400"
+                              placeholder="Amended finding text, used only when choosing Amend..."
+                              value={reviewDrafts[claim.id]?.amendedText ?? ""}
+                              onChange={(event) => setReviewDrafts((current) => ({
+                                ...current,
+                                [claim.id]: { rationale: current[claim.id]?.rationale ?? "", amendedText: event.target.value },
+                              }))}
+                            />
+                            <div className="flex flex-wrap gap-2">
+                              <Button size="sm" type="button" disabled={reviewingClaimId === claim.id} onClick={() => void submitClaimReview(claim, "accept")}>Accept</Button>
+                              <Button size="sm" type="button" variant="outline" disabled={reviewingClaimId === claim.id} onClick={() => void submitClaimReview(claim, "reject")}>Reject</Button>
+                              <Button size="sm" type="button" variant="outline" disabled={reviewingClaimId === claim.id} onClick={() => void submitClaimReview(claim, "amend")}>Amend</Button>
+                              <Button size="sm" type="button" variant="outline" disabled={reviewingClaimId === claim.id} onClick={() => void submitClaimReview(claim, "request_clarification")}>Request Clarification</Button>
+                              <Button size="sm" type="button" variant="outline" disabled={reviewingClaimId === claim.id} onClick={() => void submitClaimReview(claim, "not_applicable")}>Not Applicable</Button>
+                            </div>
+                          </div>
+                          {claim.reviewHistory.length > 0 && (
+                            <div className="mt-4 space-y-2">
+                              <div className="text-sm font-semibold text-slate-900">Review History</div>
+                              {claim.reviewHistory.map((review) => (
+                                <div key={review.id} className="rounded bg-white px-3 py-2 text-sm text-slate-600">
+                                  <div className="flex flex-wrap items-center gap-2">
+                                    <Badge className={reviewStatusClass(review.status)}>{reviewStatusLabel(review.status)}</Badge>
+                                    <span>{review.reviewer?.name ?? review.reviewer?.email ?? "Reviewer"}</span>
+                                    <span>{review.createdAt ? new Date(review.createdAt).toLocaleString() : ""}</span>
+                                  </div>
+                                  {review.rationale && <p className="mt-2 leading-5">{review.rationale}</p>}
+                                  {review.amendedText && <p className="mt-2 leading-5"><strong>Amended text:</strong> {review.amendedText}</p>}
+                                </div>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       </div>
                     ))}

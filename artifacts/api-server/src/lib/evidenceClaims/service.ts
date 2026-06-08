@@ -12,17 +12,39 @@ import {
   evidenceItemsTable,
   frameworksTable,
   frameworkVersionsTable,
+  humanReviewsTable,
   learningOutcomesTable,
   lensesTable,
   lensVersionsTable,
   moduleDescriptorsTable,
   modulesTable,
   promptVersionsTable,
+  usersTable,
 } from "@workspace/db";
 
 export type ClaimActorContext = {
   institutionId: string;
   userId?: string;
+};
+
+export type ClaimReviewDecision = "accept" | "reject" | "amend" | "request_clarification" | "not_applicable";
+
+export type ClaimReviewStatus =
+  | "not_reviewed"
+  | "accepted"
+  | "rejected"
+  | "amended"
+  | "clarification_required"
+  | "not_applicable";
+
+export type ClaimReviewDto = {
+  id: string;
+  decision: ClaimReviewDecision;
+  status: ClaimReviewStatus;
+  rationale?: string | null;
+  amendedText?: string | null;
+  reviewer?: { id?: string | null; name?: string | null; email?: string | null };
+  createdAt?: string | null;
 };
 
 export type EvidenceClaimDto = {
@@ -56,6 +78,13 @@ export type EvidenceClaimDto = {
     relevance?: number | null;
     relationship: string;
   }>;
+  review: {
+    status: ClaimReviewStatus;
+    isInstitutionalFinding: boolean;
+    findingText?: string | null;
+    latestReview?: ClaimReviewDto | null;
+  };
+  reviewHistory: ClaimReviewDto[];
   createdAt?: string | null;
 };
 
@@ -71,6 +100,18 @@ export type ClaimGenerationResponse = {
   evidenceConsidered: number;
   message: string;
   claims: EvidenceClaimDto[];
+};
+
+export type ClaimReviewInput = {
+  decision: ClaimReviewDecision;
+  rationale?: string;
+  amendedText?: string;
+};
+
+export type ClaimReviewResponse = {
+  claim: EvidenceClaimDto;
+  review: ClaimReviewDto;
+  message: string;
 };
 
 type GreenCompRule = {
@@ -274,6 +315,48 @@ function generationKey(moduleId: string, competencyId: string, evidenceIds: stri
 function formatCompetencyCode(competency: typeof competenciesTable.$inferSelect): string {
   const code = competency.metadata?.["code"];
   return typeof code === "string" && code.trim() ? code.trim() : competency.key;
+}
+
+function reviewStatusForDecision(decision: ClaimReviewDecision): ClaimReviewStatus {
+  if (decision === "accept") return "accepted";
+  if (decision === "reject") return "rejected";
+  if (decision === "amend") return "amended";
+  if (decision === "request_clarification") return "clarification_required";
+  return "not_applicable";
+}
+
+function reviewLabel(status: ClaimReviewStatus): string {
+  return status.replace(/_/g, " ");
+}
+
+function isFindingStatus(status: ClaimReviewStatus): boolean {
+  return status === "accepted" || status === "amended";
+}
+
+function claimFindingText(claim: typeof aiClaimsTable.$inferSelect, latestReview?: ClaimReviewDto | null): string | null {
+  if (!latestReview) return null;
+  if (latestReview.status === "amended") return latestReview.amendedText?.trim() || claim.claimText;
+  if (latestReview.status === "accepted") return claim.claimText;
+  return null;
+}
+
+function reviewDto(row: {
+  review: typeof humanReviewsTable.$inferSelect;
+  reviewer?: typeof usersTable.$inferSelect | null;
+}): ClaimReviewDto {
+  return {
+    id: row.review.id,
+    decision: row.review.decision as ClaimReviewDecision,
+    status: reviewStatusForDecision(row.review.decision as ClaimReviewDecision),
+    rationale: row.review.rationale,
+    amendedText: row.review.amendedText,
+    reviewer: {
+      id: row.reviewer?.id ?? row.review.reviewerUserId,
+      name: row.reviewer?.displayName,
+      email: row.reviewer?.email,
+    },
+    createdAt: row.review.createdAt?.toISOString() ?? null,
+  };
 }
 
 export async function generateGreenCompClaimsForModule(
@@ -521,52 +604,161 @@ export async function listClaimsForModule(context: ClaimActorContext, moduleId: 
     evidenceByClaim.set(row.link.aiClaimId, [...(evidenceByClaim.get(row.link.aiClaimId) ?? []), row]);
   }
 
-  const claims = rows.map((row) => ({
-    id: row.claim.id,
-    title: row.claim.title,
-    claimText: row.claim.claimText,
-    rationale: row.claim.rationale,
-    confidence: row.claim.confidence,
-    claimType: row.claim.claimType,
-    status: row.claim.status,
-    framework: {
-      key: row.framework?.key,
-      name: row.framework?.name,
-      versionLabel: row.frameworkVersion?.versionLabel,
-    },
-    lens: {
-      key: row.lens?.key,
-      name: row.lens?.name,
-      versionLabel: row.lensVersion?.versionLabel,
-    },
-    competency: {
-      id: row.competency?.id,
-      key: row.competency?.key,
-      name: row.competency?.name,
-      domain: row.domain?.name,
-    },
-    analysisRun: {
-      id: row.analysisRun.id,
-      status: row.analysisRun.status,
-      startedAt: row.analysisRun.startedAt?.toISOString() ?? null,
-      completedAt: row.analysisRun.completedAt?.toISOString() ?? null,
-      model: row.modelRun?.model,
-      provider: row.modelRun?.provider,
-      promptVersion: row.promptVersion?.versionLabel,
-    },
-    evidence: (evidenceByClaim.get(row.claim.id) ?? []).map((evidenceRow) => ({
-      id: evidenceRow.evidence.id,
-      sourceKind: evidenceRow.evidence.sourceKind,
-      evidenceText: preview(evidenceRow.evidence.evidenceText),
-      descriptorSectionId: evidenceRow.evidence.descriptorSectionId,
-      learningOutcomeId: evidenceRow.evidence.learningOutcomeId,
-      assessmentComponentId: evidenceRow.evidence.assessmentComponentId,
-      documentSectionId: evidenceRow.evidence.documentSectionId,
-      relevance: evidenceRow.link.relevance,
-      relationship: evidenceRow.link.relationship,
-    })),
-    createdAt: row.claim.createdAt?.toISOString() ?? null,
-  }));
+  const reviewRows = claimIds.length
+    ? await db
+        .select({ review: humanReviewsTable, reviewer: usersTable })
+        .from(humanReviewsTable)
+        .leftJoin(usersTable, eq(humanReviewsTable.reviewerUserId, usersTable.id))
+        .where(and(eq(humanReviewsTable.institutionId, context.institutionId), inArray(humanReviewsTable.aiClaimId, claimIds)))
+        .orderBy(desc(humanReviewsTable.createdAt))
+    : [];
+
+  const reviewsByClaim = new Map<string, ClaimReviewDto[]>();
+  for (const row of reviewRows) {
+    if (!row.review.aiClaimId) continue;
+    reviewsByClaim.set(row.review.aiClaimId, [...(reviewsByClaim.get(row.review.aiClaimId) ?? []), reviewDto(row)]);
+  }
+
+  const claims = rows.map((row) => {
+    const reviewHistory = reviewsByClaim.get(row.claim.id) ?? [];
+    const latestReview = reviewHistory.at(0) ?? null;
+    const reviewStatus = latestReview?.status ?? "not_reviewed";
+    const findingText = claimFindingText(row.claim, latestReview);
+
+    return {
+      id: row.claim.id,
+      title: row.claim.title,
+      claimText: row.claim.claimText,
+      rationale: row.claim.rationale,
+      confidence: row.claim.confidence,
+      claimType: row.claim.claimType,
+      status: row.claim.status,
+      framework: {
+        key: row.framework?.key,
+        name: row.framework?.name,
+        versionLabel: row.frameworkVersion?.versionLabel,
+      },
+      lens: {
+        key: row.lens?.key,
+        name: row.lens?.name,
+        versionLabel: row.lensVersion?.versionLabel,
+      },
+      competency: {
+        id: row.competency?.id,
+        key: row.competency?.key,
+        name: row.competency?.name,
+        domain: row.domain?.name,
+      },
+      analysisRun: {
+        id: row.analysisRun.id,
+        status: row.analysisRun.status,
+        startedAt: row.analysisRun.startedAt?.toISOString() ?? null,
+        completedAt: row.analysisRun.completedAt?.toISOString() ?? null,
+        model: row.modelRun?.model,
+        provider: row.modelRun?.provider,
+        promptVersion: row.promptVersion?.versionLabel,
+      },
+      evidence: (evidenceByClaim.get(row.claim.id) ?? []).map((evidenceRow) => ({
+        id: evidenceRow.evidence.id,
+        sourceKind: evidenceRow.evidence.sourceKind,
+        evidenceText: preview(evidenceRow.evidence.evidenceText),
+        descriptorSectionId: evidenceRow.evidence.descriptorSectionId,
+        learningOutcomeId: evidenceRow.evidence.learningOutcomeId,
+        assessmentComponentId: evidenceRow.evidence.assessmentComponentId,
+        documentSectionId: evidenceRow.evidence.documentSectionId,
+        relevance: evidenceRow.link.relevance,
+        relationship: evidenceRow.link.relationship,
+      })),
+      review: {
+        status: reviewStatus,
+        isInstitutionalFinding: isFindingStatus(reviewStatus),
+        findingText,
+        latestReview,
+      },
+      reviewHistory,
+      createdAt: row.claim.createdAt?.toISOString() ?? null,
+    };
+  });
 
   return { claims, total: claims.length };
+}
+
+export async function listReviewsForClaim(context: ClaimActorContext, claimId: string): Promise<{ reviews: ClaimReviewDto[]; total: number }> {
+  const [claim] = await db
+    .select()
+    .from(aiClaimsTable)
+    .where(and(eq(aiClaimsTable.id, claimId), eq(aiClaimsTable.institutionId, context.institutionId)))
+    .limit(1);
+
+  if (!claim) throw new Error("Claim not found");
+
+  const rows = await db
+    .select({ review: humanReviewsTable, reviewer: usersTable })
+    .from(humanReviewsTable)
+    .leftJoin(usersTable, eq(humanReviewsTable.reviewerUserId, usersTable.id))
+    .where(and(eq(humanReviewsTable.institutionId, context.institutionId), eq(humanReviewsTable.aiClaimId, claimId)))
+    .orderBy(desc(humanReviewsTable.createdAt));
+
+  const reviews = rows.map(reviewDto);
+  return { reviews, total: reviews.length };
+}
+
+export async function reviewClaim(context: ClaimActorContext, claimId: string, input: ClaimReviewInput): Promise<ClaimReviewResponse> {
+  const [claim] = await db
+    .select()
+    .from(aiClaimsTable)
+    .where(and(eq(aiClaimsTable.id, claimId), eq(aiClaimsTable.institutionId, context.institutionId)))
+    .limit(1);
+
+  if (!claim) throw new Error("Claim not found");
+
+  const decision = input.decision;
+  if (!["accept", "reject", "amend", "request_clarification", "not_applicable"].includes(decision)) {
+    throw new Error("Unsupported review action");
+  }
+
+  const amendedText = input.amendedText?.trim();
+  if (decision === "amend" && !amendedText) {
+    throw new Error("Amended text is required when amending a claim");
+  }
+
+  const [review] = await db
+    .insert(humanReviewsTable)
+    .values({
+      institutionId: context.institutionId,
+      subjectType: "ai_claim",
+      aiClaimId: claimId,
+      reviewerUserId: context.userId,
+      decision,
+      amendedText: decision === "amend" ? amendedText : undefined,
+      rationale: input.rationale?.trim() || undefined,
+      metadata: {
+        phase: "6B.2",
+        governance: "human_review_foundation",
+        originalClaimStatus: claim.status,
+        originalClaimPreserved: true,
+        institutionalFinding: decision === "accept" || decision === "amend",
+      },
+    })
+    .returning();
+
+  const [reviewer] = context.userId
+    ? await db.select().from(usersTable).where(eq(usersTable.id, context.userId)).limit(1)
+    : [];
+  const reviewResult = reviewDto({ review, reviewer });
+
+  const moduleClaims: ModuleClaimsResponse = claim.moduleId
+    ? await listClaimsForModule(context, claim.moduleId)
+    : { claims: [], total: 0 };
+  const reviewedClaim = moduleClaims.claims.find((candidate) => candidate.id === claimId);
+
+  if (!reviewedClaim) throw new Error("Reviewed claim could not be reloaded");
+
+  return {
+    claim: reviewedClaim,
+    review: reviewResult,
+    message: reviewResult.status === "accepted" || reviewResult.status === "amended"
+      ? `Claim reviewed as a ${reviewLabel(reviewResult.status)} finding.`
+      : `Claim review recorded as ${reviewLabel(reviewResult.status)}.`,
+  };
 }
