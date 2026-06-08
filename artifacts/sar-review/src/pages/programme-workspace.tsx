@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { GitCompareArrows, Layers3, ListChecks, Map, RefreshCw, Save } from "lucide-react";
+import { Archive, GitCompareArrows, Layers3, ListChecks, Map, RefreshCw, Save } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -73,6 +73,7 @@ export default function ProgrammeWorkspace() {
   const [comparison, setComparison] = useState<unknown>(null);
   const [quality, setQuality] = useState<unknown>(null);
   const [preview, setPreview] = useState<{ rows?: Array<Record<string, unknown>> } | null>(null);
+  const [confirmArchive, setConfirmArchive] = useState(false);
 
   const selectedProgramme = useMemo(
     () => programmeVersions.find((programme) => programme.id === selectedProgrammeId),
@@ -157,6 +158,19 @@ export default function ProgrammeWorkspace() {
     setPreview(await api(`/api/programme-workspace/programme-versions/${selectedProgrammeId}/map-preview`));
   }
 
+  async function archiveSelectedProgramme() {
+    if (!selectedProgrammeId) return;
+    setState({ loading: true });
+    try {
+      await api(`/api/programme-workspace/programme-versions/${selectedProgrammeId}/archive`, { method: "POST" });
+      setConfirmArchive(false);
+      await load();
+      setState({ loading: false, message: "Programme version archived." });
+    } catch (error) {
+      setState({ loading: false, error: error instanceof Error ? error.message : "Programme archive failed" });
+    }
+  }
+
   return (
     <div className="mx-auto max-w-7xl space-y-6 p-6">
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
@@ -212,6 +226,7 @@ export default function ProgrammeWorkspace() {
             <div className="flex flex-wrap gap-2">
               <Button onClick={buildStructure} disabled={!selectedProgrammeId || state.loading}><Layers3 className="mr-2 h-4 w-4" />Build structure</Button>
               <Button variant="outline" onClick={loadStructure} disabled={!selectedProgrammeId}>Load structure</Button>
+              <Button variant="outline" onClick={() => setConfirmArchive(true)} disabled={!selectedProgrammeId || state.loading}><Archive className="mr-2 h-4 w-4" />Archive</Button>
             </div>
           </CardContent>
         </Card>
@@ -295,6 +310,20 @@ export default function ProgrammeWorkspace() {
           </Card>
         </TabsContent>
       </Tabs>
+      {confirmArchive && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4">
+          <div className="w-full max-w-md rounded bg-white p-5 shadow-xl">
+            <h2 className="text-lg font-semibold text-slate-950">Archive programme version?</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-600">
+              This archives the selected draft programme version and its generated structure. It does not delete source uploads, framework seeds, users, institutions or audit events.
+            </p>
+            <div className="mt-5 flex flex-wrap justify-end gap-2">
+              <Button variant="outline" onClick={() => setConfirmArchive(false)}>Cancel</Button>
+              <Button className="bg-blue-950 hover:bg-blue-900" onClick={() => void archiveSelectedProgramme()}>Archive programme</Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
-import { ArrowRight, BookOpen, Database, Filter, Search, SlidersHorizontal } from "lucide-react";
+import { Archive, ArrowRight, BookOpen, Database, Filter, Search, SlidersHorizontal, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -34,10 +34,33 @@ type ModuleLibraryResponse = {
   total: number;
 };
 
+type ImportBatchSummary = {
+  id: string;
+  label: string;
+  type: string;
+  status: string;
+  createdAt?: string | null;
+  completedAt?: string | null;
+  counts: {
+    sourceModules: number;
+    modules: number;
+    sourceProgrammes: number;
+    programmeVersions: number;
+    structureItems: number;
+  };
+};
+
+type CleanupConfirmation = {
+  title: string;
+  message: string;
+  confirmLabel: string;
+  action: () => Promise<void>;
+};
+
 const allValue = "__all__";
 
-async function api<T>(path: string): Promise<T> {
-  const response = await fetch(path, { credentials: "include" });
+async function api<T>(path: string, options?: RequestInit): Promise<T> {
+  const response = await fetch(path, { credentials: "include", ...(options ?? {}) });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(payload.message ?? `Request failed with ${response.status}`);
   return payload as T;
@@ -82,26 +105,50 @@ export default function ModuleLibrary() {
   const [stage, setStage] = useState(allValue);
   const [semester, setSemester] = useState(allValue);
   const [upload, setUpload] = useState(allValue);
+  const [importBatches, setImportBatches] = useState<ImportBatchSummary[]>([]);
+  const [cleanupMessage, setCleanupMessage] = useState<string | null>(null);
+  const [cleanupError, setCleanupError] = useState<string | null>(null);
+  const [confirmation, setConfirmation] = useState<CleanupConfirmation | null>(null);
+
+  async function loadImportBatches(cancelled = false) {
+    try {
+      const result = await api<{ importBatches: ImportBatchSummary[] }>("/api/cleanup/import-batches");
+      if (!cancelled) setImportBatches(result.importBatches ?? []);
+    } catch {
+      if (!cancelled) setImportBatches([]);
+    }
+  }
+
+  async function loadModules(cancelled = false) {
+    setLoading(true);
+    setError(null);
+    try {
+      const result = await api<ModuleLibraryResponse>("/api/curriculum/modules");
+      if (!cancelled) setModules(result.modules ?? []);
+    } catch (err) {
+      if (!cancelled) setError(err instanceof Error ? err.message : "Module Library could not be loaded.");
+    } finally {
+      if (!cancelled) setLoading(false);
+    }
+  }
 
   useEffect(() => {
     let cancelled = false;
-    async function loadModules() {
-      setLoading(true);
-      setError(null);
-      try {
-        const result = await api<ModuleLibraryResponse>("/api/curriculum/modules");
-        if (!cancelled) setModules(result.modules ?? []);
-      } catch (err) {
-        if (!cancelled) setError(err instanceof Error ? err.message : "Module Library could not be loaded.");
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    }
-    void loadModules();
+    void loadModules(cancelled);
+    void loadImportBatches(cancelled);
     return () => {
       cancelled = true;
     };
   }, []);
+
+  async function cleanupRequest(path: string, options: RequestInit, success: string) {
+    setCleanupError(null);
+    setCleanupMessage(null);
+    await api(path, options);
+    setCleanupMessage(success);
+    await loadModules();
+    await loadImportBatches();
+  }
 
   const filterOptions = useMemo(() => {
     return {
@@ -215,6 +262,67 @@ export default function ModuleLibrary() {
       {error && (
         <div className="rounded border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>
       )}
+      {cleanupError && (
+        <div className="rounded border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">{cleanupError}</div>
+      )}
+      {cleanupMessage && (
+        <div className="rounded border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">{cleanupMessage}</div>
+      )}
+
+      {importBatches.length > 0 && (
+        <Card className="border-slate-200 shadow-sm">
+          <CardContent className="space-y-4 p-5">
+            <div className="flex flex-col gap-2 md:flex-row md:items-center md:justify-between">
+              <div>
+                <h2 className="font-semibold text-slate-950">Upload History</h2>
+                <p className="mt-1 text-sm text-slate-500">Archive or remove test uploads when no reviewed findings or action-plan links exist.</p>
+              </div>
+            </div>
+            <div className="space-y-2">
+              {importBatches.slice(0, 6).map((batch) => (
+                <div key={batch.id} className="grid gap-3 rounded border border-slate-200 p-3 lg:grid-cols-[1fr_1fr_auto] lg:items-center">
+                  <div>
+                    <div className="font-medium text-slate-900">{batch.label}</div>
+                    <div className="mt-1 text-xs text-slate-500">{batch.type.replace(/_/g, " ")} | {batch.status.replace(/_/g, " ")} | {batch.createdAt ? new Date(batch.createdAt).toLocaleString() : "date not recorded"}</div>
+                  </div>
+                  <div className="flex flex-wrap gap-2 text-xs">
+                    <Badge variant="outline">{batch.counts.modules} modules</Badge>
+                    <Badge variant="outline">{batch.counts.programmeVersions} draft programmes</Badge>
+                    <Badge variant="outline">{batch.counts.structureItems} structure items</Badge>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setConfirmation({
+                        title: "Archive upload records?",
+                        message: "This will archive uploaded modules and draft programmes created from this upload. Source evidence remains preserved and no framework seeds are affected.",
+                        confirmLabel: "Archive upload",
+                        action: () => cleanupRequest(`/api/cleanup/import-batches/${batch.id}/archive`, { method: "POST" }, "Upload records archived."),
+                      })}
+                    >
+                      <Archive className="mr-2 h-4 w-4" />Archive
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="border-rose-200 text-rose-700 hover:bg-rose-50"
+                      onClick={() => setConfirmation({
+                        title: "Delete test upload?",
+                        message: "This permanently removes uploaded test modules, draft programme structures, descriptor evidence and source rows for this upload only. It will be blocked if reviewed findings, human reviews or action-plan links exist.",
+                        confirmLabel: "Delete test upload",
+                        action: () => cleanupRequest(`/api/cleanup/import-batches/${batch.id}`, { method: "DELETE" }, "Test upload deleted."),
+                      })}
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" />Delete
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="rounded border border-slate-200 bg-white shadow-sm">
         <div className="flex items-center justify-between border-b border-slate-200 px-5 py-4">
@@ -293,11 +401,61 @@ export default function ModuleLibrary() {
                     <ArrowRight className="ml-2 h-4 w-4" />
                   </Link>
                 </Button>
+                {module.moduleId && (
+                  <div className="flex flex-wrap gap-2 xl:col-start-7 xl:justify-self-end">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      onClick={() => setConfirmation({
+                        title: "Archive module?",
+                        message: "This marks the curated module and descriptors as archived. It does not remove framework seeds, users, institutions or audit events.",
+                        confirmLabel: "Archive module",
+                        action: () => cleanupRequest(`/api/curriculum/modules/${module.moduleId}/archive`, { method: "POST" }, "Module archived."),
+                      })}
+                    >
+                      <Archive className="mr-2 h-4 w-4" />Archive
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      className="border-rose-200 text-rose-700 hover:bg-rose-50"
+                      onClick={() => setConfirmation({
+                        title: "Delete uploaded test module?",
+                        message: "This permanently removes this uploaded test module and linked descriptor/evidence records only when no human reviews, reviewed findings or action-plan links exist.",
+                        confirmLabel: "Delete module",
+                        action: () => cleanupRequest(`/api/curriculum/modules/${module.moduleId}`, { method: "DELETE" }, "Module deleted."),
+                      })}
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" />Delete
+                    </Button>
+                  </div>
+                )}
               </div>
             ))}
           </div>
         )}
       </div>
+      {confirmation && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4">
+          <div className="w-full max-w-md rounded bg-white p-5 shadow-xl">
+            <h2 className="text-lg font-semibold text-slate-950">{confirmation.title}</h2>
+            <p className="mt-2 text-sm leading-6 text-slate-600">{confirmation.message}</p>
+            <div className="mt-5 flex flex-wrap justify-end gap-2">
+              <Button variant="outline" onClick={() => setConfirmation(null)}>Cancel</Button>
+              <Button
+                className="bg-rose-700 hover:bg-rose-800"
+                onClick={() => {
+                  const action = confirmation.action;
+                  setConfirmation(null);
+                  void action().catch((error) => setCleanupError(error instanceof Error ? error.message : "Cleanup action failed."));
+                }}
+              >
+                {confirmation.confirmLabel}
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

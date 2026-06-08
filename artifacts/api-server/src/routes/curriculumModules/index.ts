@@ -11,6 +11,8 @@ import {
   listModuleLibrary,
   type ModuleLibraryFilters,
 } from "../../lib/moduleLibrary/service.js";
+import { archiveModule, hardDeleteModule } from "../../lib/cleanup/service.js";
+import { writeRequestAuditEvent } from "../../lib/auditWriter.js";
 
 const router: IRouter = Router();
 
@@ -22,7 +24,7 @@ const protectedModuleLibrary = [
 
 function context(req: Request) {
   if (!req.cast?.selectedInstitutionId) throw new Error("Institution context is required");
-  return { institutionId: req.cast.selectedInstitutionId };
+  return { institutionId: req.cast.selectedInstitutionId, userId: req.cast.user.id };
 }
 
 function queryString(req: Request, key: keyof ModuleLibraryFilters): string | undefined {
@@ -79,6 +81,49 @@ router.get(
       return;
     }
     res.json(detail);
+  },
+);
+
+router.post(
+  "/curriculum/modules/:moduleId/archive",
+  ...protectedModuleLibrary,
+  requirePermission("institution.manage"),
+  async (req, res): Promise<void> => {
+    const result = await archiveModule(context(req), idParam(req, "moduleId"));
+    await writeRequestAuditEvent({
+      req,
+      actionType: "cleanup.module_archived",
+      subjectType: "module",
+      subjectId: result.subjectId,
+      metadata: result,
+    });
+    res.json(result);
+  },
+);
+
+router.delete(
+  "/curriculum/modules/:moduleId",
+  ...protectedModuleLibrary,
+  requirePermission("institution.manage"),
+  async (req, res): Promise<void> => {
+    try {
+      const result = await hardDeleteModule(context(req), idParam(req, "moduleId"));
+      await writeRequestAuditEvent({
+        req,
+        actionType: "cleanup.module_deleted",
+        subjectType: "module",
+        subjectId: result.subjectId,
+        metadata: result,
+      });
+      res.json(result);
+    } catch (error) {
+      const blockedReasons = (error as Error & { blockedReasons?: string[] }).blockedReasons;
+      res.status(blockedReasons ? 409 : 400).json({
+        error: blockedReasons ? "delete_blocked" : "cleanup_error",
+        message: error instanceof Error ? error.message : "Module could not be deleted",
+        blockedReasons,
+      });
+    }
   },
 );
 

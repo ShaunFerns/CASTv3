@@ -28,6 +28,7 @@ import {
   sourceSystemsTable,
 } from "@workspace/db";
 import { normalizeAkariRow, normalizeDescriptorSection, normalizeManualInput, sectionsFromText } from "./normalize.js";
+import { generateDraftProgrammesFromSourceProgrammes } from "../programmeWorkspace/service.js";
 import type {
   AkariIngestionInput,
   IngestionContext,
@@ -1182,6 +1183,8 @@ export async function ingestAkariExport(context: IngestionContext, input: AkariI
     created.importBatchIds.push(batch.id);
     await linkRecord(run.id, undefined, "created", { importBatchId: batch.id });
 
+    const sourceProgrammeIdsForDrafts = new Set<string>();
+
     for (const [index, normalized] of parsed.modules.entries()) {
       const row = normalized.raw ?? {};
       const recordIdentifier = sourceRecordIdentifier(normalized, index);
@@ -1222,6 +1225,7 @@ export async function ingestAkariExport(context: IngestionContext, input: AkariI
         const sourceProgramme = await findOrCreateSourceProgramme(context, batch.id, sourceSystem.id, normalized, sourceRecord.id, programme);
         if (sourceProgramme) {
           sourceProgrammes.push(sourceProgramme);
+          sourceProgrammeIdsForDrafts.add(sourceProgramme.id);
           created.sourceProgrammeIds.push(sourceProgramme.id);
           await linkRecord(run.id, undefined, "created_or_matched", { sourceProgrammeId: sourceProgramme.id });
         }
@@ -1260,6 +1264,14 @@ export async function ingestAkariExport(context: IngestionContext, input: AkariI
       });
     }
 
+    const draftProgrammeGeneration = created.sourceProgrammeIds.length > 0
+      ? await generateDraftProgrammesFromSourceProgrammes({ institutionId: context.institutionId, userId: context.actor.userId }, {
+          importBatchId: batch.id,
+          sourceProgrammeIds: [...sourceProgrammeIdsForDrafts],
+          versionLabel: "Draft",
+        })
+      : { programmeVersionsCreatedOrReused: 0, generated: [] };
+
     await db
       .update(importBatchesTable)
       .set({
@@ -1276,6 +1288,8 @@ export async function ingestAkariExport(context: IngestionContext, input: AkariI
           modulesWithAssessments: parsed.modules.filter((module) => module.importStats?.hasAssessments).length,
           modulesWithModalityEvidence: parsed.modules.filter((module) => module.importStats?.hasModalityEvidence).length,
           modulesWithProgrammeLinks: parsed.modules.filter((module) => module.importStats?.hasProgrammeLinks).length,
+          draftProgrammes: draftProgrammeGeneration.programmeVersionsCreatedOrReused,
+          draftProgrammeGeneration,
           rowsSkipped: parsed.skippedRows.length,
           skippedRows: parsed.skippedRows,
         },
@@ -1291,6 +1305,8 @@ export async function ingestAkariExport(context: IngestionContext, input: AkariI
       modulesWithAssessments: parsed.modules.filter((module) => module.importStats?.hasAssessments).length,
       modulesWithModalityEvidence: parsed.modules.filter((module) => module.importStats?.hasModalityEvidence).length,
       modulesWithProgrammeLinks: parsed.modules.filter((module) => module.importStats?.hasProgrammeLinks).length,
+      draftProgrammes: draftProgrammeGeneration.programmeVersionsCreatedOrReused,
+      draftProgrammeGeneration,
       rowsSkipped: parsed.skippedRows.length,
       skippedRows: parsed.skippedRows,
     });

@@ -41,6 +41,9 @@ type QualityIssue = {
     sourceProgrammeId?: string;
     sourceModuleId?: string;
     sourceStructureItemId?: string;
+    duplicateKey?: string;
+    duplicateCount?: number;
+    duplicatePlacementIds?: string[];
   };
 };
 
@@ -54,6 +57,7 @@ const programmeQualityRules = [
   ["programme.item_missing_credits", "Structure item missing credits", "A curated structure item is missing credits.", "completeness", "warning"],
   ["programme.item_unknown_core_option", "Unknown core/optional status", "A curated structure item has unknown core/optional status.", "mapping", "warning"],
   ["programme.item_missing_descriptor", "Structure item missing descriptor", "A module placement is not linked to a module descriptor.", "completeness", "warning"],
+  ["programme.duplicate_placement", "Duplicate programme placement", "More than one programme placement has the same module, stage, semester, pathway, group and core/optional status.", "duplication", "warning"],
 ] as const;
 
 function keyPart(value: string | null | undefined, fallback: string): string {
@@ -68,6 +72,86 @@ function coreOption(value: string | null | undefined): "core" | "option" | "elec
   if (["option", "optional"].includes(normalized)) return normalized as "option" | "optional";
   if (normalized.includes("elective")) return "elective";
   return "unknown";
+}
+
+function placementPart(value: string | null | undefined, fallback = "none"): string {
+  return value?.trim().toLowerCase().replace(/\s+/g, " ") || fallback;
+}
+
+function placementModuleKey(input: { moduleId?: string | null; sourceModuleId?: string | null }): string {
+  return input.moduleId ? `module:${input.moduleId}` : input.sourceModuleId ? `source:${input.sourceModuleId}` : "module:none";
+}
+
+function placementSemanticKey(input: {
+  moduleId?: string | null;
+  sourceModuleId?: string | null;
+  stage?: string | null;
+  semester?: string | null;
+  pathway?: string | null;
+  groupId?: string | null;
+  coreOption?: string | null;
+}): string {
+  return [
+    placementModuleKey(input),
+    `stage:${placementPart(input.stage)}`,
+    `semester:${placementPart(input.semester)}`,
+    `pathway:${placementPart(input.pathway)}`,
+    `group:${input.groupId ?? "none"}`,
+    `core:${placementPart(input.coreOption, "unknown")}`,
+  ].join("|");
+}
+
+function itemPlacementSemanticKey(item: CuratedStructureItemRow): string {
+  return placementSemanticKey({
+    moduleId: item.moduleId,
+    sourceModuleId: item.sourceModuleId,
+    stage: item.stage,
+    semester: item.semester,
+    pathway: item.pathway,
+    groupId: item.curatedStructureGroupId,
+    coreOption: item.coreOption,
+  });
+}
+
+function sourcePlacementSemanticKey(input: {
+  sourceItem: SourceStructureItemRow;
+  moduleId?: string | null;
+  groupId?: string | null;
+}): string {
+  return placementSemanticKey({
+    moduleId: input.moduleId,
+    sourceModuleId: input.sourceItem.sourceModuleId,
+    stage: input.sourceItem.stage,
+    semester: input.sourceItem.semester,
+    pathway: input.sourceItem.pathway,
+    groupId: input.groupId,
+    coreOption: coreOption(input.sourceItem.coreOption),
+  });
+}
+
+function mergedPlacementMetadata(
+  existing: Record<string, unknown> | null | undefined,
+  input: { semanticKey: string; sourceStructureItemId: string; sourceGroupName?: string | null; sourceCoreOption?: string | null },
+): Record<string, unknown> {
+  const previous = existing ?? {};
+  const sourceIds = Array.isArray(previous["sourceStructureItemIds"])
+    ? previous["sourceStructureItemIds"].filter((id): id is string => typeof id === "string")
+    : [];
+  return {
+    ...previous,
+    semanticPlacementKey: input.semanticKey,
+    sourceCoreOption: input.sourceCoreOption,
+    sourceGroupName: input.sourceGroupName,
+    sourceStructureItemIds: [...new Set([...sourceIds, input.sourceStructureItemId])],
+    generatedBy: previous["generatedBy"] ?? "phase4b_structure_builder",
+  };
+}
+
+function itemSourceStructureIds(item: CuratedStructureItemRow): string[] {
+  const sourceIds = Array.isArray(item.metadata?.["sourceStructureItemIds"])
+    ? item.metadata["sourceStructureItemIds"].filter((id): id is string => typeof id === "string")
+    : [];
+  return [...new Set([item.sourceStructureItemId, ...sourceIds].filter((id): id is string => Boolean(id)))];
 }
 
 async function ensureProgrammeQualityRules() {
@@ -127,6 +211,54 @@ export async function createProgrammeVersionFromSource(
 
   const programmeKey = source.code ?? source.externalId ?? source.id;
   const versionLabel = input.versionLabel?.trim() || "Draft";
+
+  const [existing] = await db
+    .select()
+    .from(programmeVersionsTable)
+    .where(
+      and(
+        eq(programmeVersionsTable.institutionId, context.institutionId),
+        eq(programmeVersionsTable.programmeKey, programmeKey),
+        eq(programmeVersionsTable.versionLabel, versionLabel),
+      ),
+    )
+    .limit(1);
+
+  if (existing) {
+    const [updated] = await db
+      .update(programmeVersionsTable)
+      .set({
+        sourceProgrammeId: existing.sourceProgrammeId ?? source.id,
+        programmeCode: existing.programmeCode ?? source.code,
+        programmeName: existing.programmeName ?? source.name,
+        academicYear: existing.academicYear ?? input.academicYear,
+        award: existing.award ?? source.award,
+        level: existing.level ?? source.level,
+        school: existing.school ?? source.school,
+        department: existing.department ?? source.department,
+        campus: existing.campus ?? source.campus,
+        modeOfDelivery: existing.modeOfDelivery ?? source.modeOfDelivery,
+        updatedAt: new Date(),
+        metadata: {
+          ...existing.metadata,
+          createdFromSourceProgrammeId: existing.metadata["createdFromSourceProgrammeId"] ?? source.id,
+          reusedFromAkariAffiliation: true,
+        },
+      })
+      .where(eq(programmeVersionsTable.id, existing.id))
+      .returning();
+
+    await upsertReconciliation(context, {
+      sourceType: "source_programme",
+      sourceId: source.id,
+      targetType: "programme_version",
+      targetId: updated.id,
+      status: "confirmed",
+      confidence: 1,
+      rationale: "Reused existing draft programme version from Akari source programme.",
+    });
+    return updated;
+  }
 
   const [programme] = await db
     .insert(programmeVersionsTable)
@@ -369,6 +501,7 @@ export async function buildInitialCuratedStructure(context: ActorContext, progra
 
   let groupsCreated = 0;
   let itemsCreated = 0;
+  let itemsReused = 0;
   for (const [index, sourceItem] of sourceItems.entries()) {
     const stageKey = `stage-${keyPart(sourceItem.stage, "unknown")}`;
     const stageGroup = await ensureGroup(context, {
@@ -411,6 +544,61 @@ export async function buildInitialCuratedStructure(context: ActorContext, progra
     const module = await findOrCreateModule(context, sourceItem.sourceModuleId);
     const descriptor = module ? await findDescriptor(module.id, sourceItem.sourceModuleId) : undefined;
     const credits = sourceItem.credits ? Number(String(sourceItem.credits).replace(/[^\d.]/g, "")) : undefined;
+    const resolvedCoreOption = coreOption(sourceItem.coreOption);
+    const semanticPlacementKey = sourcePlacementSemanticKey({ sourceItem, moduleId: module?.id, groupId: parentGroup.id });
+
+    const [existingItem] = await db
+      .select()
+      .from(curatedStructureItemsTable)
+      .where(and(eq(curatedStructureItemsTable.curatedStructureId, structure.id), eq(curatedStructureItemsTable.sourceStructureItemId, sourceItem.id)))
+      .limit(1);
+    const existingSemanticItem = existingItem
+      ? undefined
+      : (
+          await db
+            .select()
+            .from(curatedStructureItemsTable)
+            .where(eq(curatedStructureItemsTable.curatedStructureId, structure.id))
+        ).find((item) => itemPlacementSemanticKey(item) === semanticPlacementKey || item.metadata?.["semanticPlacementKey"] === semanticPlacementKey);
+    const itemToReuse = existingItem ?? existingSemanticItem;
+
+    if (itemToReuse) {
+      await db
+        .update(curatedStructureItemsTable)
+        .set({
+          curatedStructureGroupId: itemToReuse.curatedStructureGroupId ?? parentGroup.id,
+          moduleId: itemToReuse.moduleId ?? module?.id,
+          moduleDescriptorId: itemToReuse.moduleDescriptorId ?? descriptor?.id,
+          sourceStructureItemId: itemToReuse.sourceStructureItemId ?? sourceItem.id,
+          sourceModuleId: itemToReuse.sourceModuleId ?? sourceItem.sourceModuleId,
+          stage: itemToReuse.stage ?? sourceItem.stage,
+          semester: itemToReuse.semester ?? sourceItem.semester,
+          pathway: itemToReuse.pathway ?? sourceItem.pathway,
+          credits: itemToReuse.credits ?? (Number.isFinite(credits) ? credits : undefined),
+          label: itemToReuse.label ?? module?.moduleTitle ?? sourceItem.externalId,
+          metadata: mergedPlacementMetadata(itemToReuse.metadata, {
+            semanticKey: semanticPlacementKey,
+            sourceStructureItemId: sourceItem.id,
+            sourceCoreOption: sourceItem.coreOption,
+            sourceGroupName: sourceItem.groupName,
+          }),
+          updatedAt: new Date(),
+        })
+        .where(eq(curatedStructureItemsTable.id, itemToReuse.id));
+      itemsReused += 1;
+      await upsertReconciliation(context, {
+        sourceType: "source_structure_item",
+        sourceId: sourceItem.id,
+        targetType: "curated_structure_item",
+        targetId: itemToReuse.id,
+        status: "confirmed",
+        confidence: existingItem ? 0.9 : 0.85,
+        rationale: existingItem
+          ? "Reused curated structure item from matching source structure item."
+          : "Reused curated structure item from semantic programme placement match.",
+      });
+      continue;
+    }
 
     const [item] = await db
       .insert(curatedStructureItemsTable)
@@ -423,18 +611,23 @@ export async function buildInitialCuratedStructure(context: ActorContext, progra
         sourceStructureItemId: sourceItem.id,
         sourceModuleId: sourceItem.sourceModuleId,
         itemType: "module",
-        coreOption: coreOption(sourceItem.coreOption),
+        coreOption: resolvedCoreOption,
         stage: sourceItem.stage,
         semester: sourceItem.semester,
         pathway: sourceItem.pathway,
         credits: Number.isFinite(credits) ? credits : undefined,
         orderIndex: sourceItem.orderIndex ?? index,
         label: module?.moduleTitle ?? sourceItem.externalId,
-        metadata: {
+        metadata: mergedPlacementMetadata({
           sourceCoreOption: sourceItem.coreOption,
           sourceGroupName: sourceItem.groupName,
           generatedBy: "phase4b_structure_builder",
-        },
+        }, {
+          semanticKey: semanticPlacementKey,
+          sourceStructureItemId: sourceItem.id,
+          sourceCoreOption: sourceItem.coreOption,
+          sourceGroupName: sourceItem.groupName,
+        }),
       })
       .returning();
     itemsCreated += 1;
@@ -450,7 +643,53 @@ export async function buildInitialCuratedStructure(context: ActorContext, progra
     });
   }
 
-  return { structure, groupsCreated, itemsCreated };
+  return { structure, groupsCreated, itemsCreated, itemsReused };
+}
+
+export async function generateDraftProgrammesFromSourceProgrammes(
+  context: ActorContext,
+  input: { importBatchId?: string; sourceProgrammeIds?: string[]; versionLabel?: string; academicYear?: string },
+) {
+  const sourceProgrammes = input.sourceProgrammeIds?.length
+    ? await db
+        .select()
+        .from(sourceProgrammesTable)
+        .where(and(eq(sourceProgrammesTable.institutionId, context.institutionId), inArray(sourceProgrammesTable.id, input.sourceProgrammeIds)))
+        .orderBy(asc(sourceProgrammesTable.code), asc(sourceProgrammesTable.name))
+    : input.importBatchId
+      ? await db
+          .select()
+          .from(sourceProgrammesTable)
+          .where(and(eq(sourceProgrammesTable.institutionId, context.institutionId), eq(sourceProgrammesTable.importBatchId, input.importBatchId)))
+          .orderBy(asc(sourceProgrammesTable.code), asc(sourceProgrammesTable.name))
+      : [];
+
+  const uniqueSourceProgrammes = sourceProgrammes.filter((source, index, all) => (
+    all.findIndex((candidate) => candidate.id === source.id) === index
+  ));
+
+  const generated = [];
+  for (const source of uniqueSourceProgrammes) {
+    const programme = await createProgrammeVersionFromSource(context, {
+      sourceProgrammeId: source.id,
+      versionLabel: input.versionLabel ?? "Draft",
+      academicYear: input.academicYear,
+    });
+    const structure = await buildInitialCuratedStructure(context, programme.id);
+    generated.push({
+      sourceProgrammeId: source.id,
+      programmeVersionId: programme.id,
+      curatedStructureId: structure.structure.id,
+      groupsCreated: structure.groupsCreated,
+      itemsCreated: structure.itemsCreated,
+      itemsReused: structure.itemsReused,
+    });
+  }
+
+  return {
+    programmeVersionsCreatedOrReused: generated.length,
+    generated,
+  };
 }
 
 export async function getCuratedStructure(context: ActorContext, programmeVersionId: string) {
@@ -545,7 +784,7 @@ export async function sourceComparison(context: ActorContext, programmeVersionId
       curatedStructureItems: curatedItems.length,
       curatedGroups: structureData.groups.length,
     },
-    missingFromCurated: sourceItems.filter((sourceItem) => !curatedItems.some((item) => item.sourceStructureItemId === sourceItem.id)),
+    missingFromCurated: sourceItems.filter((sourceItem) => !curatedItems.some((item) => itemSourceStructureIds(item).includes(sourceItem.id))),
     curatedOnly: curatedItems.filter((item) => !item.sourceStructureItemId),
   };
 }
@@ -572,6 +811,33 @@ export async function runProgrammeQualityChecks(context: ActorContext, programme
     if (item.credits == null) issues.push({ key: "programme.item_missing_credits", title: "Structure item missing credits", message: "A structure item is missing credits.", severity: "warning", category: "completeness", target: { curatedStructureItemId: item.id } });
     if (item.coreOption === "unknown") issues.push({ key: "programme.item_unknown_core_option", title: "Unknown core/optional status", message: "A structure item has unknown core/optional status.", severity: "warning", category: "mapping", target: { curatedStructureItemId: item.id } });
     if (!item.moduleDescriptorId) issues.push({ key: "programme.item_missing_descriptor", title: "Structure item missing descriptor", message: "A structure item is not linked to a descriptor.", severity: "warning", category: "completeness", target: { curatedStructureItemId: item.id } });
+  }
+
+  const placementsByKey = new Map<string, CuratedStructureItemRow[]>();
+  for (const item of structureData.items as CuratedStructureItemRow[]) {
+    const key = itemPlacementSemanticKey(item);
+    placementsByKey.set(key, [...(placementsByKey.get(key) ?? []), item]);
+  }
+  for (const [duplicateKey, items] of placementsByKey) {
+    if (items.length <= 1) continue;
+    for (const item of items.slice(1)) {
+      issues.push({
+        key: "programme.duplicate_placement",
+        title: "Duplicate programme placement",
+        message: "This module appears more than once with the same stage, semester, pathway, group and core/optional status.",
+        severity: "warning",
+        category: "duplication",
+        target: {
+          curatedStructureItemId: item.id,
+          moduleId: item.moduleId ?? undefined,
+          sourceModuleId: item.sourceModuleId ?? undefined,
+          sourceStructureItemId: item.sourceStructureItemId ?? undefined,
+          duplicateKey,
+          duplicateCount: items.length,
+          duplicatePlacementIds: items.map((candidate) => candidate.id),
+        },
+      });
+    }
   }
 
   const [qualityRun] = await db

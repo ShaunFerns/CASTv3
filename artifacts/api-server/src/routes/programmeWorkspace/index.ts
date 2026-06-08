@@ -1,5 +1,6 @@
 import { Router, type IRouter, type Request } from "express";
 import { writeRequestAuditEvent } from "../../lib/auditWriter.js";
+import { archiveProgrammeVersion } from "../../lib/cleanup/service.js";
 import {
   requireInstitutionContext,
   requirePermission,
@@ -90,6 +91,23 @@ router.get(
       return;
     }
     res.json({ programmeVersion: programme });
+  },
+);
+
+router.post(
+  "/programme-workspace/programme-versions/:programmeVersionId/archive",
+  ...protectedWorkspace,
+  requirePermission("institution.manage"),
+  async (req, res): Promise<void> => {
+    const result = await archiveProgrammeVersion(context(req), idParam(req, "programmeVersionId"));
+    await writeRequestAuditEvent({
+      req,
+      actionType: "cleanup.programme_version_archived",
+      subjectType: "programme_version",
+      subjectId: result.subjectId,
+      metadata: result,
+    });
+    res.json(result);
   },
 );
 

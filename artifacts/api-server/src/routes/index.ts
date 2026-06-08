@@ -15,6 +15,7 @@ import programmeWorkspaceRouter from "./programmeWorkspace/index.js";
 import programmeMapRouter from "./programmeMap/index.js";
 import curriculumModulesRouter from "./curriculumModules/index.js";
 import claimsRouter from "./claims/index.js";
+import cleanupRouter from "./cleanup/index.js";
 
 const router: IRouter = Router();
 
@@ -26,6 +27,7 @@ router.use(programmeWorkspaceRouter);
 router.use(programmeMapRouter);
 router.use(curriculumModulesRouter);
 router.use(claimsRouter);
+router.use(cleanupRouter);
 router.use(modulesRouter);
 router.use(dashboardRouter);
 router.use(exportRouter);
