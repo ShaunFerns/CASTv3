@@ -13,6 +13,7 @@ import {
   ingestManualModule,
   ingestSinglePdfDescriptor,
 } from "../../lib/ingestion/service.js";
+import { logger } from "../../lib/logger.js";
 
 const router: IRouter = Router();
 
@@ -69,7 +70,28 @@ router.post(
       metadata: { pathway: "akari" },
     });
 
-    const result = await ingestAkariExport(context(req), req.body);
+    let result: Awaited<ReturnType<typeof ingestAkariExport>>;
+    try {
+      result = await ingestAkariExport(context(req), req.body);
+    } catch (error) {
+      logger.error(
+        {
+          err: error,
+          requestId: req.id,
+          institutionId: req.cast?.selectedInstitutionId,
+          userId: req.cast?.user.id,
+          fileName: req.body?.fileName,
+          mimeType: req.body?.mimeType,
+        },
+        "Unhandled Akari upload route failure",
+      );
+      res.status(500).json({
+        error: "akari_upload_failed",
+        message: "Programme data upload failed while CAST was processing the spreadsheet. The issue has been logged.",
+        errors: [{ code: "akari.processing_failed", message: "The issue has been logged for review.", severity: "error" }],
+      });
+      return;
+    }
 
     await writeRequestAuditEvent({
       req,
@@ -79,7 +101,29 @@ router.post(
       metadata: { pathway: "akari", status: result.status, created: result.created },
     });
 
-    res.status(result.status === "failed" ? 500 : 201).json(result);
+    if (result.status === "failed") {
+      const validationFailure = result.errors.some((error) => error.code.startsWith("akari.") && error.code !== "akari.processing_failed");
+      logger.warn(
+        {
+          requestId: req.id,
+          runId: result.runId,
+          institutionId: req.cast?.selectedInstitutionId,
+          userId: req.cast?.user.id,
+          fileName: req.body?.fileName,
+          mimeType: req.body?.mimeType,
+          errors: result.errors,
+        },
+        "Akari upload returned a failed ingestion result",
+      );
+      res.status(validationFailure ? 422 : 500).json({
+        ...result,
+        error: validationFailure ? "akari_validation_failed" : "akari_upload_failed",
+        message: result.errors[0]?.message ?? "Programme data upload failed.",
+      });
+      return;
+    }
+
+    res.status(201).json(result);
   },
 );
 

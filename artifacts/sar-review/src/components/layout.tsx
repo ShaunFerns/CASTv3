@@ -1,14 +1,33 @@
 import { useState, useEffect, useRef } from "react";
 import { Link, useLocation } from "wouter";
 import {
-  Home, Info, Upload, Database,
-  Library, ArrowLeft, ClipboardCheck, Lock, LogOut, Menu, X, Map, Layers3, Wrench, Settings,
+  ArrowLeft,
+  ClipboardCheck,
+  Database,
+  Home,
+  Info,
+  Layers3,
+  Library,
+  Lock,
+  LogOut,
+  Map,
+  Menu,
+  Settings,
+  Upload,
+  Wrench,
+  X,
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useAuth } from "@/lib/auth";
 
-const allNavItems = [
+const publicNavItems = [
   { href: "/", label: "Home", icon: Home, exact: true },
+  { href: "/about", label: "About", icon: Info, exact: true },
+  { href: "/frameworks", label: "Frameworks", icon: Layers3, exact: false },
+];
+
+const authenticatedNavItems = [
+  { href: "/dashboard", label: "Dashboard", icon: Home, exact: true },
   { href: "/ingestion", label: "Upload Curriculum", icon: Upload, exact: false },
   { href: "/programme/workspace", label: "Programme Workspace", icon: Library, exact: false },
   { href: "/programme/map", label: "Programme Map", icon: Map, exact: false },
@@ -16,55 +35,60 @@ const allNavItems = [
   { href: "/module-builder", label: "Module Builder", icon: Wrench, exact: false },
   { href: "/review-enhancement", label: "Review & Enhancement", icon: ClipboardCheck, exact: false },
   { href: "/data-quality", label: "Data Quality", icon: Database, exact: false },
-  { href: "/admin/login", label: "Log in", icon: Settings, exact: false },
+  { href: "/admin/login", label: "Administration", icon: Settings, exact: false },
 ];
 
-function getNavItems(location: string) {
+function getNavItems(location: string, isAuthenticated: boolean) {
+  if (!isAuthenticated) return publicNavItems;
+
   if (location.startsWith("/modules/")) {
     return [
-      { href: "/", label: "Home", icon: Home, exact: true },
+      { href: "/dashboard", label: "Dashboard", icon: Home, exact: true },
       { href: "/programme/workspace", label: "Programme Workspace", icon: Library, exact: false },
       { href: "/module-builder", label: "Module Builder", icon: Wrench, exact: false },
       { href: "/data-quality", label: "Data Quality", icon: Database, exact: false },
     ];
   }
-  return allNavItems;
+
+  return authenticatedNavItems;
 }
 
-const Logo = () => (
-  <Link href="/" className="flex items-center gap-3 mr-4 shrink-0">
-    <div className="flex items-center justify-center w-9 h-9 rounded" style={{ backgroundColor: "#F5A800" }}>
-      <svg viewBox="0 0 24 24" fill="none" className="w-5 h-5" xmlns="http://www.w3.org/2000/svg">
-        <path d="M12 3L2 8l10 5 10-5-10-5z" fill="#003865" />
-        <path d="M2 13l10 5 10-5" stroke="#003865" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-        <path d="M2 18l10 5 10-5" stroke="#003865" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-      </svg>
-    </div>
-    <div className="flex flex-col leading-none">
-      <span className="font-bold text-base tracking-tight text-white">CAST</span>
-      <span className="text-[10px] font-medium tracking-wide" style={{ color: "#F5A800" }}>CAST v3</span>
-    </div>
-  </Link>
-);
+function Logo({ isAuthenticated }: { isAuthenticated: boolean }) {
+  return (
+    <Link href={isAuthenticated ? "/dashboard" : "/"} className="flex items-center gap-3 mr-4 shrink-0">
+      <div className="flex items-center justify-center w-9 h-9 rounded" style={{ backgroundColor: "#F5A800" }}>
+        <svg viewBox="0 0 24 24" fill="none" className="w-5 h-5" xmlns="http://www.w3.org/2000/svg">
+          <path d="M12 3L2 8l10 5 10-5-10-5z" fill="#003865" />
+          <path d="M2 13l10 5 10-5" stroke="#003865" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M2 18l10 5 10-5" stroke="#003865" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      </div>
+      <div className="flex flex-col leading-none">
+        <span className="font-bold text-base tracking-tight text-white">CAST</span>
+        <span className="text-[10px] font-medium tracking-wide" style={{ color: "#F5A800" }}>
+          {isAuthenticated ? "Platform" : "Curriculum Intelligence"}
+        </span>
+      </div>
+    </Link>
+  );
+}
 
 export function Layout({ children }: { children: React.ReactNode }) {
   const [location] = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
   const menuButtonRef = useRef<HTMLButtonElement>(null);
   const isAbout = location === "/about";
-  const { isAdmin, logout } = useAuth();
+  const { isAuthenticated, logout } = useAuth();
 
-  const navItems = getNavItems(location);
+  const navItems = getNavItems(location, isAuthenticated);
 
   const isActive = (href: string, exact: boolean) =>
     exact ? location === href : location.startsWith(href);
 
-  // Close mobile menu on navigation
   useEffect(() => {
     setMobileOpen(false);
   }, [location]);
 
-  // Close on Escape; return focus to trigger
   useEffect(() => {
     if (!mobileOpen) return;
     const handleKey = (e: KeyboardEvent) => {
@@ -83,10 +107,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
     <div className="min-h-screen flex flex-col bg-[#f4f6f9] text-[#003865] font-sans">
       <header className="sticky top-0 z-30 w-full no-print" style={{ backgroundColor: "#003865" }}>
         <div className="container flex h-16 max-w-screen-2xl mx-auto px-4 sm:px-8 items-center justify-between">
-          <Logo />
+          <Logo isAuthenticated={isAuthenticated} />
 
-          {/* ── Desktop nav ── */}
-          {isAbout ? (
+          {isAbout && isAuthenticated ? (
             <nav className="hidden md:flex items-center gap-1 text-xs font-medium" aria-label="Main navigation">
               <button
                 onClick={() => window.history.back()}
@@ -96,11 +119,11 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 Back
               </button>
               <Link
-                href="/"
+                href="/dashboard"
                 className="flex items-center gap-2 px-4 py-2 rounded text-white/80 hover:text-white hover:bg-white/10 transition-all"
               >
                 <Home className="h-4 w-4" aria-hidden="true" />
-                Home
+                Dashboard
               </Link>
             </nav>
           ) : (
@@ -124,23 +147,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
                   </Link>
                 );
               })}
-              <Tooltip>
-                <TooltipTrigger asChild>
-                  <Link
-                    href="/about"
-                    className="ml-2 flex items-center justify-center w-8 h-8 rounded-full text-white/40 hover:text-white/80 hover:bg-white/10 transition-all"
-                    aria-label="About this tool"
-                  >
-                    <Info className="h-4 w-4" aria-hidden="true" />
-                  </Link>
-                </TooltipTrigger>
-                <TooltipContent side="bottom" className="text-xs">
-                  About this tool
-                </TooltipContent>
-              </Tooltip>
 
               <div className="ml-3 pl-3 border-l border-white/20 flex items-center gap-1">
-                {isAdmin ? (
+                {isAuthenticated ? (
                   <>
                     <span
                       className="px-2 py-0.5 text-[10px] font-bold rounded tracking-wider"
@@ -153,13 +162,13 @@ export function Layout({ children }: { children: React.ReactNode }) {
                         <button
                           onClick={() => void logout()}
                           className="flex items-center justify-center w-8 h-8 rounded-full text-white/50 hover:text-white hover:bg-white/10 transition-all"
-                          aria-label="Log out (admin)"
+                          aria-label="Log out"
                         >
                           <LogOut className="h-4 w-4" aria-hidden="true" />
                         </button>
                       </TooltipTrigger>
                       <TooltipContent side="bottom" className="text-xs">
-                        Log out (admin)
+                        Log out
                       </TooltipContent>
                     </Tooltip>
                   </>
@@ -168,7 +177,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                     <TooltipTrigger asChild>
                       <Link
                         href="/admin/login"
-                        className="flex items-center gap-1.5 px-2 py-1.5 rounded text-white/40 hover:text-white/70 hover:bg-white/10 transition-all text-xs"
+                        className="flex items-center gap-1.5 px-3 py-2 rounded bg-white text-[#003865] hover:bg-blue-50 transition-all text-xs font-semibold"
                       >
                         <Lock className="h-3 w-3" aria-hidden="true" />
                         Log in
@@ -183,7 +192,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
             </nav>
           )}
 
-          {/* ── Mobile hamburger ── */}
           <button
             ref={menuButtonRef}
             className="md:hidden flex items-center justify-center w-10 h-10 rounded text-white/80 hover:text-white hover:bg-white/10 transition-all"
@@ -198,7 +206,6 @@ export function Layout({ children }: { children: React.ReactNode }) {
           </button>
         </div>
 
-        {/* ── Mobile menu panel ── */}
         {mobileOpen && (
           <nav
             id="mobile-nav"
@@ -207,7 +214,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
             style={{ backgroundColor: "#003865" }}
           >
             <ul className="container max-w-screen-2xl mx-auto px-4 py-3 flex flex-col gap-1" role="list">
-              {isAbout ? (
+              {isAbout && isAuthenticated ? (
                 <>
                   <li>
                     <button
@@ -220,11 +227,11 @@ export function Layout({ children }: { children: React.ReactNode }) {
                   </li>
                   <li>
                     <Link
-                      href="/"
+                      href="/dashboard"
                       className="flex items-center gap-3 px-4 py-3 rounded text-white/80 hover:text-white hover:bg-white/10 transition-all text-sm font-medium"
                     >
                       <Home className="h-4 w-4 shrink-0" aria-hidden="true" />
-                      Home
+                      Dashboard
                     </Link>
                   </li>
                 </>
@@ -251,22 +258,9 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 })
               )}
 
-              {/* Divider */}
               <li aria-hidden="true" className="my-1 border-t border-white/10" />
 
-              {/* About */}
-              <li>
-                <Link
-                  href="/about"
-                  className="flex items-center gap-3 px-4 py-3 rounded text-white/60 hover:text-white hover:bg-white/10 transition-all text-sm font-medium"
-                >
-                  <Info className="h-4 w-4 shrink-0" aria-hidden="true" />
-                  About this tool
-                </Link>
-              </li>
-
-              {/* Account */}
-              {isAdmin ? (
+              {isAuthenticated ? (
                 <li>
                   <button
                     onClick={() => { void logout(); setMobileOpen(false); }}
@@ -286,10 +280,10 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 <li>
                   <Link
                     href="/admin/login"
-                    className="flex items-center gap-3 px-4 py-3 rounded text-white/40 hover:text-white/70 hover:bg-white/10 transition-all text-sm font-medium"
+                    className="flex items-center gap-3 px-4 py-3 rounded text-white/80 hover:text-white hover:bg-white/10 transition-all text-sm font-medium"
                   >
                     <Lock className="h-4 w-4 shrink-0" aria-hidden="true" />
-                    CAST v3 login
+                    Log in
                   </Link>
                 </li>
               )}

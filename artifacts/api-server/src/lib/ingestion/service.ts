@@ -37,6 +37,7 @@ import type {
   NormalizedModuleInput,
   PdfDescriptorIngestionInput,
 } from "./types.js";
+import { logger } from "../logger.js";
 
 type CreatedAccumulator = IngestionResult["created"];
 
@@ -77,6 +78,38 @@ function decodeText(base64: string | undefined): string | undefined {
   return buffer?.toString("utf8");
 }
 
+class AkariIngestionValidationError extends Error {
+  constructor(
+    message: string,
+    readonly code = "akari.validation",
+  ) {
+    super(message);
+    this.name = "AkariIngestionValidationError";
+  }
+}
+
+function isAkariValidationError(error: unknown): error is AkariIngestionValidationError {
+  return error instanceof AkariIngestionValidationError;
+}
+
+function fileExtension(fileName: string | undefined): string | undefined {
+  const match = fileName?.toLowerCase().match(/(\.[a-z0-9]+)$/);
+  return match?.[1];
+}
+
+function validateAkariFileInput(input: AkariIngestionInput) {
+  if (input.rows || input.csvText) return;
+  if (!input.fileBase64) {
+    throw new AkariIngestionValidationError("Choose a CSV, XLSX or XLS file before uploading.", "akari.file_missing");
+  }
+
+  const extension = fileExtension(input.fileName);
+  const allowed = new Set([".csv", ".xlsx", ".xls"]);
+  if (extension && !allowed.has(extension)) {
+    throw new AkariIngestionValidationError("Programme data uploads support CSV, XLSX and XLS files.", "akari.unsupported_file_type");
+  }
+}
+
 function csvRows(csvText: string): Record<string, unknown>[] {
   const lines = csvText.split(/\r?\n/).filter((line) => line.trim().length > 0);
   if (lines.length === 0) return [];
@@ -111,16 +144,41 @@ function splitCsvLine(line: string): string[] {
 }
 
 function spreadsheetRows(input: AkariIngestionInput): Record<string, unknown>[] {
+  validateAkariFileInput(input);
   if (input.rows) return input.rows;
   if (input.csvText) return csvRows(input.csvText);
 
   const buffer = decodeBase64(input.fileBase64);
   if (!buffer) return [];
 
+  const extension = fileExtension(input.fileName);
+  const mimeType = input.mimeType?.toLowerCase() ?? "";
+  if (extension === ".csv" || mimeType.includes("csv")) {
+    return csvRows(buffer.toString("utf8"));
+  }
+
   const workbook = XLSX.read(buffer, { type: "buffer" });
   const firstSheet = workbook.SheetNames[0];
   if (!firstSheet) return [];
   return XLSX.utils.sheet_to_json<Record<string, unknown>>(workbook.Sheets[firstSheet], { defval: "" });
+}
+
+function validateAkariRows(rows: Record<string, unknown>[]) {
+  if (rows.length === 0) {
+    throw new AkariIngestionValidationError("The spreadsheet did not contain any readable rows.", "akari.no_rows");
+  }
+
+  const hasRecognisedModuleData = rows.some((row, index) => {
+    const normalized = normalizeAkariRow(row, index);
+    return Boolean(normalized.moduleCode || normalized.moduleTitle || normalized.descriptorText || normalized.programmeCode || normalized.programmeName);
+  });
+
+  if (!hasRecognisedModuleData) {
+    throw new AkariIngestionValidationError(
+      "No recognised programme or module rows were found. Check headings such as module code, module title, programme code or programme name.",
+      "akari.unrecognised_columns",
+    );
+  }
 }
 
 async function extractPdfText(input: PdfDescriptorIngestionInput): Promise<string> {
@@ -228,6 +286,58 @@ async function findOrCreateSourceProgramme(
     })
     .returning();
   return created;
+}
+
+async function findOrCreateSourceModule(
+  context: IngestionContext,
+  importBatchId: string,
+  sourceSystemId: string,
+  sourceRecordId: string,
+  externalId: string,
+  input: NormalizedModuleInput,
+  row: Record<string, unknown>,
+) {
+  const [existing] = await db
+    .select()
+    .from(sourceModulesTable)
+    .where(and(eq(sourceModulesTable.sourceSystemId, sourceSystemId), eq(sourceModulesTable.externalId, externalId)))
+    .limit(1);
+
+  if (existing) return { sourceModule: existing, created: false };
+
+  const [created] = await db
+    .insert(sourceModulesTable)
+    .values({
+      institutionId: context.institutionId,
+      importBatchId,
+      sourceSystemId,
+      sourceRecordId,
+      externalId,
+      moduleCode: input.moduleCode,
+      moduleTitle: input.moduleTitle,
+      credits: input.credits != null ? String(input.credits) : undefined,
+      stage: input.stage,
+      semester: input.semester,
+      school: input.school,
+      department: input.department,
+      campus: input.campus,
+      descriptorText: input.descriptorText,
+      rawPayload: row,
+      normalizedPayload: input,
+    })
+    .returning();
+
+  return { sourceModule: created, created: true };
+}
+
+function sourceRecordIdentifier(input: NormalizedModuleInput, index: number): string {
+  const base = input.sourceIdentifier ?? input.moduleCode ?? input.moduleTitle ?? "row";
+  return `${base}:row-${input.rowNumber ?? index + 2}`;
+}
+
+function sourceModuleExternalId(input: NormalizedModuleInput, importBatchId: string): string {
+  if (input.moduleCode) return input.moduleCode;
+  return `${importBatchId}:${input.sourceIdentifier ?? input.rowNumber ?? "module"}`;
 }
 
 async function findOrCreateModule(context: IngestionContext, input: NormalizedModuleInput, sourceModuleId?: string) {
@@ -585,6 +695,7 @@ export async function ingestAkariExport(context: IngestionContext, input: AkariI
 
   try {
     const rows = spreadsheetRows(input);
+    validateAkariRows(rows);
     const sourceSystem = await ensureAkariSourceSystem(context);
     const [batch] = await db
       .insert(importBatchesTable)
@@ -603,6 +714,8 @@ export async function ingestAkariExport(context: IngestionContext, input: AkariI
 
     for (const [index, row] of rows.entries()) {
       const normalized = normalizeAkariRow(row, index);
+      const recordIdentifier = sourceRecordIdentifier(normalized, index);
+      const moduleExternalId = sourceModuleExternalId(normalized, batch.id);
       const [sourceRecord] = await db
         .insert(sourceRecordsTable)
         .values({
@@ -611,7 +724,7 @@ export async function ingestAkariExport(context: IngestionContext, input: AkariI
           sourceSystemId: sourceSystem.id,
           recordType: "module",
           status: "parsed",
-          sourceIdentifier: normalized.sourceIdentifier,
+          sourceIdentifier: recordIdentifier,
           sourceHash: checksum(JSON.stringify(row)),
           rowNumber: Number(normalized.rowNumber),
           payload: row,
@@ -621,29 +734,17 @@ export async function ingestAkariExport(context: IngestionContext, input: AkariI
       created.sourceRecordIds.push(sourceRecord.id);
       await linkRecord(run.id, undefined, "created", { sourceRecordId: sourceRecord.id });
 
-      const [sourceModule] = await db
-        .insert(sourceModulesTable)
-        .values({
-          institutionId: context.institutionId,
-          importBatchId: batch.id,
-          sourceSystemId: sourceSystem.id,
-          sourceRecordId: sourceRecord.id,
-          externalId: normalized.sourceIdentifier,
-          moduleCode: normalized.moduleCode,
-          moduleTitle: normalized.moduleTitle,
-          credits: normalized.credits != null ? String(normalized.credits) : undefined,
-          stage: normalized.stage,
-          semester: normalized.semester,
-          school: normalized.school,
-          department: normalized.department,
-          campus: normalized.campus,
-          descriptorText: normalized.descriptorText,
-          rawPayload: row,
-          normalizedPayload: normalized,
-        })
-        .returning();
-      created.sourceModuleIds.push(sourceModule.id);
-      await linkRecord(run.id, undefined, "created", { sourceModuleId: sourceModule.id });
+      const { sourceModule, created: sourceModuleWasCreated } = await findOrCreateSourceModule(
+        context,
+        batch.id,
+        sourceSystem.id,
+        sourceRecord.id,
+        moduleExternalId,
+        normalized,
+        row,
+      );
+      if (sourceModuleWasCreated) created.sourceModuleIds.push(sourceModule.id);
+      await linkRecord(run.id, undefined, sourceModuleWasCreated ? "created" : "created_or_matched", { sourceModuleId: sourceModule.id });
 
       const sourceProgramme = await findOrCreateSourceProgramme(context, batch.id, sourceSystem.id, normalized, sourceRecord.id);
       if (sourceProgramme) {
@@ -661,7 +762,7 @@ export async function ingestAkariExport(context: IngestionContext, input: AkariI
             sourceRecordId: sourceRecord.id,
             sourceProgrammeId: sourceProgramme?.id,
             sourceModuleId: sourceModule.id,
-            externalId: `${normalized.sourceIdentifier ?? sourceModule.id}:structure`,
+            externalId: `${sourceRecord.id}:structure`,
             stage: normalized.stage,
             semester: normalized.semester,
             credits: normalized.credits != null ? String(normalized.credits) : undefined,
@@ -700,9 +801,28 @@ export async function ingestAkariExport(context: IngestionContext, input: AkariI
     await updateRunComplete(run.id, status, { rowCount: rows.length, created });
     return { runId: run.id, status, created, errors };
   } catch (error) {
-    const message = error instanceof Error ? error.message : "Unknown ingestion failure";
-    errors.push({ code: "ingestion.failed", message, severity: "error" });
-    await updateRunComplete(run.id, "failed", { created }, { message });
+    const validationError = isAkariValidationError(error);
+    const message = validationError
+      ? error.message
+      : "Programme data upload failed while CAST was processing the spreadsheet. The issue has been logged.";
+    const code = validationError ? error.code : "akari.processing_failed";
+
+    logger.error(
+      {
+        err: error,
+        runId: run.id,
+        institutionId: context.institutionId,
+        actorUserId: context.actor.userId,
+        fileName: input.fileName,
+        mimeType: input.mimeType,
+        validationError,
+        created,
+      },
+      "Akari curriculum upload failed",
+    );
+
+    errors.push({ code, message, severity: "error" });
+    await updateRunComplete(run.id, "failed", { created }, { code, message, validationError });
     return { runId: run.id, status: "failed", created, errors };
   }
 }

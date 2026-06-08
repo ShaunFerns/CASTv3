@@ -91,9 +91,29 @@ async function postCurriculumUpload(path: string, body: Record<string, unknown>)
 
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error(payload.message ?? payload.error ?? `Request failed with ${response.status}`);
+    const details = Array.isArray(payload.errors)
+      ? payload.errors
+          .slice(0, 3)
+          .map((error: { message?: string }) => error.message)
+          .filter(Boolean)
+          .join(" ")
+      : "";
+    const message = payload.message ?? payload.error ?? `Request failed with ${response.status}`;
+    throw new Error(details && !String(message).includes(details) ? `${message} ${details}` : message);
   }
   return payload as CurriculumUploadResult;
+}
+
+function validateProgrammeFile(file: File): string | undefined {
+  const lowerName = file.name.toLowerCase();
+  const allowed = [".csv", ".xlsx", ".xls"];
+  if (!allowed.some((extension) => lowerName.endsWith(extension))) {
+    return "Programme data uploads support CSV, XLSX and XLS files.";
+  }
+  if (file.size === 0) {
+    return "The selected file appears to be empty.";
+  }
+  return undefined;
 }
 
 function UploadPanel({
@@ -174,6 +194,11 @@ export default function UploadCurriculum() {
   async function runProgrammeUpload() {
     if (!programmeFile) {
       setState({ loading: false, error: "Choose a CSV or Excel file first." });
+      return;
+    }
+    const validationMessage = validateProgrammeFile(programmeFile);
+    if (validationMessage) {
+      setState({ loading: false, error: validationMessage });
       return;
     }
     setState({ loading: true });
@@ -474,7 +499,7 @@ export default function UploadCurriculum() {
                   <div>
                     <div className="font-semibold">Supported formats</div>
                     <p className="mt-1 leading-6">
-                      Use CSV, XLSX or XLS exports. CAST accepts Akari-style workbooks and single-sheet module lists
+                      CSV, XLSX and XLS exports are supported. CAST accepts Akari-style workbooks and single-sheet module lists
                       with headings such as module code, module title, credits, stage, semester, learning outcomes,
                       indicative content, teaching methods and assessments.
                     </p>
@@ -487,7 +512,7 @@ export default function UploadCurriculum() {
                 onFileChange={setProgrammeFile}
                 accept=".csv,.xlsx,.xls"
                 title="Click to select a spreadsheet"
-                description=".xlsx, .xls or .csv format"
+                description=".csv, .xlsx or .xls format"
               />
 
               <Button onClick={runProgrammeUpload} disabled={state.loading} className="bg-blue-950 hover:bg-blue-900">

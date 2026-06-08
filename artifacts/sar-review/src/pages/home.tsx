@@ -155,7 +155,7 @@ export default function Home() {
               Evidence-informed curriculum intelligence for higher education.
             </p>
             <p className="mt-4 max-w-2xl text-base leading-7 text-slate-600">
-              CAST helps programme teams upload curriculum evidence, analyse it through configurable layers,
+              CAST helps programme teams collect curriculum evidence, analyse it through configurable layers,
               generate review-ready insights and plan improvement with confidence.
             </p>
             <div className="mt-7 flex flex-wrap gap-3">
@@ -166,7 +166,10 @@ export default function Home() {
                 </Link>
               </Button>
               <Button asChild variant="outline">
-                <Link href="/ingestion">Upload Curriculum</Link>
+                <Link href="/about">Learn more</Link>
+              </Button>
+              <Button asChild variant="outline">
+                <Link href="/frameworks">Explore framework approach</Link>
               </Button>
             </div>
           </div>
@@ -183,8 +186,8 @@ export default function Home() {
             <h2 className="text-xl font-semibold text-slate-950">From Evidence To Action</h2>
             <p className="mt-1 text-sm text-slate-600">A clear workflow for evidence-led curriculum enhancement.</p>
           </div>
-          <Link href="/programme/map" className="inline-flex items-center text-sm font-semibold text-blue-800">
-            Open Programme Map
+          <Link href="/frameworks" className="inline-flex items-center text-sm font-semibold text-blue-800">
+            Explore framework approach
             <ArrowRight className="ml-2 h-4 w-4" />
           </Link>
         </div>
