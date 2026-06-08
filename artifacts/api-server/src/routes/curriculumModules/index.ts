@@ -6,6 +6,7 @@ import {
   resolveCurrentUser,
 } from "../../lib/requestContext.js";
 import {
+  getModuleBuilderDetail,
   getModuleLibraryItem,
   listModuleLibrary,
   type ModuleLibraryFilters,
@@ -64,6 +65,20 @@ router.get(
       return;
     }
     res.json({ module: item });
+  },
+);
+
+router.get(
+  "/curriculum/modules/:moduleId/builder-detail",
+  ...protectedModuleLibrary,
+  requirePermission("curriculum.read"),
+  async (req, res): Promise<void> => {
+    const detail = await getModuleBuilderDetail(context(req), idParam(req, "moduleId"));
+    if (!detail) {
+      res.status(404).json({ error: "not_found", message: "Module not found" });
+      return;
+    }
+    res.json(detail);
   },
 );
 
