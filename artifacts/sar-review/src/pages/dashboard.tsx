@@ -3,6 +3,7 @@ import { Link } from "wouter";
 import {
   ArrowRight,
   BarChart3,
+  BookOpen,
   CheckCircle2,
   ClipboardCheck,
   Database,
@@ -59,6 +60,7 @@ const workflow = [
 
 const quickActions = [
   { href: "/ingestion", label: "Upload Curriculum", description: "Add module descriptors or programme spreadsheets.", icon: Upload, color: "text-blue-700 bg-blue-50" },
+  { href: "/module-library", label: "Module Library", description: "Browse uploaded modules, descriptors and evidence.", icon: BookOpen, color: "text-sky-700 bg-sky-50" },
   { href: "/programme/workspace", label: "Programme Workspace", description: "Curate programme versions and structures.", icon: Library, color: "text-emerald-700 bg-emerald-50" },
   { href: "/programme/map", label: "Programme Map", description: "Explore the base map with switchable overlays.", icon: Map, color: "text-violet-700 bg-violet-50" },
   { href: "/frameworks", label: "Framework Hub", description: "Manage framework and lens layers.", icon: Layers3, color: "text-amber-700 bg-amber-50" },

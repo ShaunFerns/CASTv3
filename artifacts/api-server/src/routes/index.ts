@@ -13,6 +13,7 @@ import securityRouter from "./security/index.js";
 import ingestionRouter from "./ingestion/index.js";
 import programmeWorkspaceRouter from "./programmeWorkspace/index.js";
 import programmeMapRouter from "./programmeMap/index.js";
+import curriculumModulesRouter from "./curriculumModules/index.js";
 
 const router: IRouter = Router();
 
@@ -22,6 +23,7 @@ router.use(securityRouter);
 router.use(ingestionRouter);
 router.use(programmeWorkspaceRouter);
 router.use(programmeMapRouter);
+router.use(curriculumModulesRouter);
 router.use(modulesRouter);
 router.use(dashboardRouter);
 router.use(exportRouter);

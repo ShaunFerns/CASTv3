@@ -32,6 +32,7 @@ import ProgrammeWorkspace from "@/pages/programme-workspace";
 import ProgrammeMapPage from "@/pages/programme-map";
 import FrameworkHub from "@/pages/framework-hub";
 import ModuleBuilder from "@/pages/module-builder";
+import ModuleLibrary from "@/pages/module-library";
 import ReviewEnhancement from "@/pages/review-enhancement";
 import DataQuality from "@/pages/data-quality";
 import NotFound from "@/pages/not-found";
@@ -120,6 +121,7 @@ function Router() {
         <Route path="/programme" component={Programme} />
         <Route path="/frameworks/:frameworkKey" component={FrameworkHub} />
         <Route path="/frameworks" component={FrameworkHub} />
+        <Route path="/module-library" component={protectedPage(ModuleLibrary)} />
         <Route path="/module-builder" component={protectedPage(ModuleBuilder)} />
         <Route path="/review-enhancement" component={protectedPage(ReviewEnhancement)} />
         <Route path="/data-quality" component={protectedPage(DataQuality)} />

@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from "react";
 import { Link, useLocation } from "wouter";
 import {
   ArrowLeft,
+  BookOpen,
   ClipboardCheck,
   Database,
   Home,
@@ -32,6 +33,7 @@ const authenticatedNavItems = [
   { href: "/programme/workspace", label: "Programme Workspace", icon: Library, exact: false },
   { href: "/programme/map", label: "Programme Map", icon: Map, exact: false },
   { href: "/frameworks", label: "Framework Hub", icon: Layers3, exact: false },
+  { href: "/module-library", label: "Module Library", icon: BookOpen, exact: false },
   { href: "/module-builder", label: "Module Builder", icon: Wrench, exact: false },
   { href: "/review-enhancement", label: "Review & Enhancement", icon: ClipboardCheck, exact: false },
   { href: "/data-quality", label: "Data Quality", icon: Database, exact: false },
@@ -45,6 +47,7 @@ function getNavItems(location: string, isAuthenticated: boolean) {
     return [
       { href: "/dashboard", label: "Dashboard", icon: Home, exact: true },
       { href: "/programme/workspace", label: "Programme Workspace", icon: Library, exact: false },
+      { href: "/module-library", label: "Module Library", icon: BookOpen, exact: false },
       { href: "/module-builder", label: "Module Builder", icon: Wrench, exact: false },
       { href: "/data-quality", label: "Data Quality", icon: Database, exact: false },
     ];
