@@ -6,12 +6,15 @@ import path from "path";
 import { existsSync } from "fs";
 import { fileURLToPath } from "url";
 import router from "./routes";
+import { validateProductionBootstrapAdminConfig } from "./lib/bootstrapAdmin";
 import { logger } from "./lib/logger";
 import { PostgresSessionStore } from "./lib/postgresSessionStore";
 import { requestIdMiddleware } from "./lib/requestId";
 
 const app: Express = express();
 const isProduction = process.env.NODE_ENV === "production";
+
+validateProductionBootstrapAdminConfig();
 
 function sessionSecret(): string {
   const secret = process.env.SESSION_SECRET;

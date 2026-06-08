@@ -92,6 +92,11 @@ DATABASE_URL=postgresql://user:password@localhost:5432/cast
 AI_INTEGRATIONS_OPENAI_API_KEY=sk-your-openai-key
 AI_INTEGRATIONS_OPENAI_BASE_URL=https://api.openai.com/v1
 SESSION_SECRET=replace-with-a-long-random-string-at-least-32-chars
+CAST_BOOTSTRAP_ADMIN_EMAIL=admin@example.edu
+CAST_BOOTSTRAP_ADMIN_NAME="CAST Bootstrap Admin"
+CAST_BOOTSTRAP_ADMIN_PASSWORD=replace-with-a-strong-password
+CAST_BOOTSTRAP_INSTITUTION_NAME="CAST Preview Institution"
+CAST_BOOTSTRAP_INSTITUTION_SLUG=cast-preview
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=change-me
 ```
@@ -146,21 +151,33 @@ Important rules:
 - treat uploaded documents, extracted text, source exports and analysis outputs as sensitive curriculum data
 - keep RLS planning separate until the API/session foundation is fully ready
 
-## Preview Mode
+## Bootstrap Access
 
-CAST v3 secured routes require a CAST identity session and institution context. During development only, the preview bridge can connect the legacy admin login to a seeded CAST v3 preview user and institution.
+CAST v3 secured routes require a CAST identity session and institution context. Until full Supabase Auth/OIDC is implemented, CAST uses a temporary production bootstrap admin login.
 
-Enable only in local or preview environments:
+The `/admin/login` screen authenticates the configured bootstrap admin and then creates or reuses:
+
+- institution
+- user
+- institution membership
+- institution-admin role
+- membership role assignment
+
+The login stores `castUserId` and `selectedInstitutionId` in the server-side session, so `/api/security/context`, Upload Curriculum, Programme Workspace, Programme Map, Framework Hub and Module Builder can use the normal Phase 3B middleware path.
+
+Configure:
 
 ```bash
-CAST_V3_PREVIEW_BRIDGE=true
-CAST_V3_PREVIEW_INSTITUTION_SLUG=cast-preview
-CAST_V3_PREVIEW_INSTITUTION_NAME="CAST Preview Institution"
-CAST_V3_PREVIEW_USER_EMAIL=preview-admin@cast.local
-CAST_V3_PREVIEW_USER_NAME="CAST Preview Admin"
+CAST_BOOTSTRAP_ADMIN_EMAIL=admin@example.edu
+CAST_BOOTSTRAP_ADMIN_NAME="CAST Bootstrap Admin"
+CAST_BOOTSTRAP_ADMIN_PASSWORD=replace-with-a-strong-password
+CAST_BOOTSTRAP_INSTITUTION_NAME="CAST Preview Institution"
+CAST_BOOTSTRAP_INSTITUTION_SLUG=cast-preview
 ```
 
-The bridge is disabled by default and ignored in production. Do not use preview mode as production authentication.
+In production, `CAST_BOOTSTRAP_ADMIN_PASSWORD` must be at least 16 characters and include uppercase, lowercase, number and symbol characters. `SESSION_SECRET` must be at least 32 characters and must not use a placeholder.
+
+Legacy `/api/auth/*` admin login remains for legacy prototype routes only. Do not use `CAST_V3_PREVIEW_BRIDGE` as the CAST v3 access model.
 
 ## Render Deployment
 
@@ -170,6 +187,11 @@ Render should provide:
 
 - `DATABASE_URL`
 - `SESSION_SECRET`
+- `CAST_BOOTSTRAP_ADMIN_EMAIL`
+- `CAST_BOOTSTRAP_ADMIN_NAME`
+- `CAST_BOOTSTRAP_ADMIN_PASSWORD`
+- `CAST_BOOTSTRAP_INSTITUTION_NAME`
+- `CAST_BOOTSTRAP_INSTITUTION_SLUG`
 - `ADMIN_USERNAME`
 - `ADMIN_PASSWORD`
 - `AI_INTEGRATIONS_OPENAI_API_KEY`

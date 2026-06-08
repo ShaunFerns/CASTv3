@@ -59,6 +59,21 @@ services:
       - key: SESSION_SECRET
         sync: false
 
+      - key: CAST_BOOTSTRAP_ADMIN_EMAIL
+        sync: false
+
+      - key: CAST_BOOTSTRAP_ADMIN_NAME
+        sync: false
+
+      - key: CAST_BOOTSTRAP_ADMIN_PASSWORD
+        sync: false
+
+      - key: CAST_BOOTSTRAP_INSTITUTION_NAME
+        sync: false
+
+      - key: CAST_BOOTSTRAP_INSTITUTION_SLUG
+        sync: false
+
       - key: ADMIN_USERNAME
         sync: false
 

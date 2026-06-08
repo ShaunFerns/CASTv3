@@ -62,6 +62,11 @@ LOG_LEVEL=info
 CAST_V3_PREVIEW_BRIDGE=false
 DATABASE_URL=postgresql://...
 SESSION_SECRET=<long-random-secret-at-least-32-characters>
+CAST_BOOTSTRAP_ADMIN_EMAIL=<bootstrap-admin-email>
+CAST_BOOTSTRAP_ADMIN_NAME=<bootstrap-admin-name>
+CAST_BOOTSTRAP_ADMIN_PASSWORD=<strong-bootstrap-admin-password>
+CAST_BOOTSTRAP_INSTITUTION_NAME=<institution-name>
+CAST_BOOTSTRAP_INSTITUTION_SLUG=<institution-slug>
 ADMIN_USERNAME=<admin-username>
 ADMIN_PASSWORD=<admin-password>
 AI_INTEGRATIONS_OPENAI_API_KEY=<openai-api-key>
@@ -156,6 +161,16 @@ The API server sets `trust proxy` before session middleware so secure cookies wo
 
 Sessions are stored in PostgreSQL using `app_sessions`, which is created by `0008_phase3b_identity_sessions_roles.sql`.
 
+## Bootstrap Access
+
+Until full Supabase Auth/OIDC is implemented, CAST v3 uses a temporary production bootstrap admin access model.
+
+The `/admin/login` screen authenticates against `CAST_BOOTSTRAP_ADMIN_EMAIL` and `CAST_BOOTSTRAP_ADMIN_PASSWORD`. On first successful login, the API creates or reuses the configured institution, user, institution membership, institution-admin role and membership role link.
+
+The session stores `castUserId` and `selectedInstitutionId`, so `/api/security/context` and protected CAST v3 routes use the normal tenant-aware middleware.
+
+In production, `CAST_BOOTSTRAP_ADMIN_PASSWORD` must be at least 16 characters and include uppercase, lowercase, number and symbol characters. Legacy `ADMIN_USERNAME` and `ADMIN_PASSWORD` are only for legacy prototype routes that still use `/api/auth/*`.
+
 ## CORS Behaviour
 
 Development keeps permissive CORS for local testing.
@@ -164,7 +179,7 @@ Production does not reflect arbitrary origins. Same-origin Render traffic does n
 
 ## Preview Bridge
 
-The CAST v3 preview bridge remains in the codebase for development and preview use.
+The CAST v3 preview bridge remains in the codebase for development and preview use, but it is no longer the CAST v3 access model.
 
 It is disabled by default and ignored when `NODE_ENV=production`, even if `CAST_V3_PREVIEW_BRIDGE=true`.
 
@@ -180,9 +195,10 @@ The Express API server serves the built frontend and falls back to `index.html` 
 
 1. Confirm the Supabase `DATABASE_URL` points to the intended database.
 2. Confirm all Render secrets are configured.
-3. Confirm `CAST_V3_PREVIEW_BRIDGE=false`.
-4. Deploy from the branch containing `render.yaml`.
-5. Confirm pre-deploy migrations complete.
+3. Confirm bootstrap admin variables are set and the password is strong.
+4. Confirm `CAST_V3_PREVIEW_BRIDGE=false`.
+5. Deploy from the branch containing `render.yaml`.
+6. Confirm pre-deploy migrations complete.
 6. Confirm framework seeds complete.
 7. Confirm `/api/healthz` returns `200`.
 8. Confirm a frontend deep link returns the React app.

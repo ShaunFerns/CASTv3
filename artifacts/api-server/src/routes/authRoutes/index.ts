@@ -2,11 +2,14 @@ import { Router, type IRouter } from "express";
 import type { Request, Response } from "express";
 import { requireAdmin } from "../../lib/auth.js";
 import {
+  auditBootstrapAdminSessionCreated,
   auditLoginSessionCreated,
   auditLogoutSessionRevoked,
-  auditPreviewBridgeSessionCreated,
 } from "../../lib/auditWriter.js";
-import { applyPreviewBridgeSession } from "../../lib/previewBridge.js";
+import {
+  authenticateBootstrapAdmin,
+  createBootstrapAdminSession,
+} from "../../lib/bootstrapAdmin.js";
 import { db, auditLogsTable } from "@workspace/db";
 import { desc } from "drizzle-orm";
 
@@ -24,35 +27,58 @@ router.post("/auth/login", async (req: Request, res: Response): Promise<void> =>
   }
 
   if (username === ADMIN_USERNAME && password === ADMIN_PASSWORD) {
-    try {
-      req.session.isAdmin = true;
-      const previewBridge = await applyPreviewBridgeSession(req);
-      auditLoginSessionCreated(req, {
-        strategy: "legacy_admin",
-        previewBridgeEnabled: previewBridge?.enabled === true,
-      });
-      if (previewBridge) {
-        auditPreviewBridgeSessionCreated(req, previewBridge);
-      }
-      res.json({
-        ok: true,
-        isAdmin: true,
-        previewBridge: previewBridge
-          ? {
-              enabled: true,
-              userId: previewBridge.userId,
-              institutionId: previewBridge.institutionId,
-              roleKey: previewBridge.roleKey,
-            }
-          : { enabled: false },
-      });
-    } catch (error) {
-      console.error("[preview-bridge]", error);
-      res.status(500).json({ error: "Failed to initialise CAST v3 preview session" });
-    }
+    req.session.isAdmin = true;
+    auditLoginSessionCreated(req, {
+      strategy: "legacy_admin",
+      castV3SessionCreated: false,
+    });
+    res.json({
+      ok: true,
+      isAdmin: true,
+      castV3SessionCreated: false,
+    });
   } else {
     res.status(401).json({ error: "Invalid credentials" });
   }
+});
+
+router.post("/cast-v3/auth/bootstrap-login", async (req: Request, res: Response): Promise<void> => {
+  const { email, password } = req.body as { email?: string; password?: string };
+
+  try {
+    const config = authenticateBootstrapAdmin(email, password);
+    const bootstrapSession = await createBootstrapAdminSession(req, config);
+    auditLoginSessionCreated(req, {
+      strategy: "bootstrap_admin",
+      userId: bootstrapSession.userId,
+      institutionId: bootstrapSession.institutionId,
+      roleKey: bootstrapSession.roleKey,
+    });
+    auditBootstrapAdminSessionCreated(req, bootstrapSession);
+    res.json({
+      ok: true,
+      userId: bootstrapSession.userId,
+      selectedInstitutionId: bootstrapSession.institutionId,
+      roleKey: bootstrapSession.roleKey,
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "CAST v3 bootstrap login failed";
+    const status = message.includes("configuration is missing") ? 503 : 401;
+    res.status(status).json({ error: status === 503 ? "Bootstrap admin is not configured" : "Invalid credentials" });
+  }
+});
+
+router.post("/cast-v3/auth/logout", (req: Request, res: Response): void => {
+  const sessionId = req.sessionID;
+  req.session.destroy((err) => {
+    if (err) {
+      res.status(500).json({ error: "Logout failed" });
+      return;
+    }
+    auditLogoutSessionRevoked(req, sessionId, { strategy: "bootstrap_admin" });
+    res.clearCookie("cast.sid");
+    res.json({ ok: true });
+  });
 });
 
 router.post("/auth/logout", (req: Request, res: Response): void => {

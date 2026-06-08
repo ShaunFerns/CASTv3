@@ -8,7 +8,7 @@ import { Label } from "@/components/ui/label";
 import { Lock } from "lucide-react";
 
 export default function Login() {
-  const [username, setUsername] = useState("");
+  const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
@@ -20,7 +20,7 @@ export default function Login() {
     setError(null);
     setIsLoading(true);
     try {
-      await login(username, password);
+      await login(email, password);
       setLocation("/");
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : "Login failed");
@@ -41,19 +41,20 @@ export default function Login() {
               <Lock className="w-7 h-7 text-white" />
             </div>
           </div>
-          <CardTitle className="text-xl text-[#003865]">Admin Login</CardTitle>
-          <CardDescription>Sign in to access write and analysis features</CardDescription>
+          <CardTitle className="text-xl text-[#003865]">CAST v3 Login</CardTitle>
+          <CardDescription>Sign in with the configured CAST v3 bootstrap admin account</CardDescription>
         </CardHeader>
         <CardContent>
           <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-1">
-              <Label htmlFor="username">Username</Label>
+              <Label htmlFor="email">Email</Label>
               <Input
-                id="username"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
+                id="email"
+                type="email"
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
                 required
-                autoComplete="username"
+                autoComplete="email"
                 autoFocus
               />
             </div>

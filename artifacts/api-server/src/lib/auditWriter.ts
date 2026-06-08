@@ -3,6 +3,7 @@ import { auditEventsTable, db, type InsertAuditEvent } from "@workspace/db";
 import { logger } from "./logger.js";
 import type { CastRequestContext, CastSystemActorContext, CastWorkerActorContext } from "./requestContext.js";
 import type { PreviewBridgeSession } from "./previewBridge.js";
+import type { BootstrapAdminSession } from "./bootstrapAdmin.js";
 
 export type AuditActorContext = CastRequestContext | CastSystemActorContext | CastWorkerActorContext;
 
@@ -161,6 +162,26 @@ export function auditPreviewBridgeSessionCreated(req: Request, bridge: PreviewBr
       roleId: bridge.roleId,
       roleKey: bridge.roleKey,
       productionEnabled: false,
+    },
+  });
+}
+
+export function auditBootstrapAdminSessionCreated(req: Request, session: BootstrapAdminSession): void {
+  writeRequestAuditEventSoon({
+    req,
+    actorType: "user",
+    actorUserId: session.userId,
+    actorIdentifier: "cast_v3_bootstrap_admin",
+    institutionId: session.institutionId,
+    actionType: "session.bootstrap_admin_created",
+    subjectType: "app_session",
+    subjectId: req.sessionID,
+    metadata: {
+      userId: session.userId,
+      membershipId: session.membershipId,
+      roleId: session.roleId,
+      roleKey: session.roleKey,
+      productionCapable: true,
     },
   });
 }

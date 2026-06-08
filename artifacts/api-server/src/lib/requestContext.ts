@@ -72,6 +72,7 @@ declare module "express-session" {
     castUserId?: string;
     authUserId?: string;
     selectedInstitutionId?: string;
+    authStrategy?: string;
   }
 }
 

@@ -25,35 +25,41 @@ Set at minimum:
 - `AI_INTEGRATIONS_OPENAI_API_KEY`
 - `AI_INTEGRATIONS_OPENAI_BASE_URL`
 - `SESSION_SECRET`
+- `CAST_BOOTSTRAP_ADMIN_EMAIL`
+- `CAST_BOOTSTRAP_ADMIN_NAME`
+- `CAST_BOOTSTRAP_ADMIN_PASSWORD`
+- `CAST_BOOTSTRAP_INSTITUTION_NAME`
+- `CAST_BOOTSTRAP_INSTITUTION_SLUG`
 - `ADMIN_USERNAME`
 - `ADMIN_PASSWORD`
 
 The `AI_INTEGRATIONS_OPENAI_*` names are retained for prototype compatibility. They should be renamed behind a compatibility layer during the production-hardening phase.
 
-### CAST v3 Preview Bridge
+### CAST v3 Bootstrap Admin Access
 
-`CAST_V3_PREVIEW_BRIDGE` is a development/preview-only bridge for testing secured CAST v3 screens before full Supabase Auth is implemented.
+CAST v3 no longer uses the preview bridge as its access model. Until full Supabase Auth/OIDC is implemented, local and production deployments use a configured bootstrap admin account.
 
-When `CAST_V3_PREVIEW_BRIDGE=true` and `NODE_ENV` is not `production`, a successful legacy admin login seeds or reuses:
+The `/admin/login` screen posts to `/api/cast-v3/auth/bootstrap-login`. On first successful login the API creates or reuses:
 
-- a preview institution
-- a preview user
+- an institution
+- an active CAST v3 user
 - an active institution membership
 - an institution-admin role assignment
+- the required membership role link
 
-The login then stores `req.session.castUserId` and `req.session.selectedInstitutionId`, allowing Phase 3B middleware to resolve a real CAST v3 request context. This makes `/api/security/context`, `/api/ingestion/*` and `/api/programme-workspace/*` usable for local preview without bypassing those middleware checks.
-
-The bridge is disabled by default and is ignored in production even if the flag is set.
+The login stores `req.session.castUserId` and `req.session.selectedInstitutionId`, allowing Phase 3B middleware to resolve a real CAST v3 request context. This makes `/api/security/context`, `/api/ingestion/*`, `/api/programme-workspace/*` and programme map APIs usable without bypassing middleware.
 
 ```bash
-CAST_V3_PREVIEW_BRIDGE=true
-CAST_V3_PREVIEW_INSTITUTION_SLUG=cast-preview
-CAST_V3_PREVIEW_INSTITUTION_NAME="CAST Preview Institution"
-CAST_V3_PREVIEW_USER_EMAIL=preview-admin@cast.local
-CAST_V3_PREVIEW_USER_NAME="CAST Preview Admin"
+CAST_BOOTSTRAP_ADMIN_EMAIL=admin@example.edu
+CAST_BOOTSTRAP_ADMIN_NAME="CAST Bootstrap Admin"
+CAST_BOOTSTRAP_ADMIN_PASSWORD="Use-A-Strong-Password-2026!"
+CAST_BOOTSTRAP_INSTITUTION_NAME="CAST Preview Institution"
+CAST_BOOTSTRAP_INSTITUTION_SLUG=cast-preview
 ```
 
-Do not use the preview bridge as production authentication. It exists only to bridge the old single-admin prototype login to the new CAST v3 tenant-aware API during development.
+In production, the bootstrap password must be at least 16 characters and include uppercase, lowercase, number and symbol characters. `SESSION_SECRET` must be at least 32 characters and must not use a placeholder.
+
+Legacy `/api/auth/*` admin login remains for legacy prototype routes only. `CAST_V3_PREVIEW_BRIDGE` is obsolete for CAST v3 access and must remain disabled in production.
 
 ## Install
 
@@ -212,6 +218,11 @@ DATABASE_URL=postgresql://cast:cast@localhost:5432/cast
 AI_INTEGRATIONS_OPENAI_BASE_URL=https://api.openai.com/v1
 AI_INTEGRATIONS_OPENAI_API_KEY=your-api-key
 SESSION_SECRET=replace-with-a-long-random-secret
+CAST_BOOTSTRAP_ADMIN_EMAIL=admin@example.edu
+CAST_BOOTSTRAP_ADMIN_NAME="CAST Bootstrap Admin"
+CAST_BOOTSTRAP_ADMIN_PASSWORD="Use-A-Strong-Password-2026!"
+CAST_BOOTSTRAP_INSTITUTION_NAME="CAST Preview Institution"
+CAST_BOOTSTRAP_INSTITUTION_SLUG=cast-preview
 ADMIN_USERNAME=admin
 ADMIN_PASSWORD=replace-me
 ```
@@ -232,7 +243,7 @@ NODE_ENV=production pnpm --filter @workspace/api-server run build
 The built app was also smoke-tested outside Replit with:
 
 ```bash
-PORT=4177 NODE_ENV=production DATABASE_URL=postgresql://cast:cast@localhost:5432/cast AI_INTEGRATIONS_OPENAI_BASE_URL=https://api.openai.com/v1 AI_INTEGRATIONS_OPENAI_API_KEY=dummy-local-key SESSION_SECRET=local-development-secret-change-me-32chars ADMIN_USERNAME=admin ADMIN_PASSWORD=admin node --enable-source-maps artifacts/api-server/dist/index.mjs
+PORT=4177 NODE_ENV=production DATABASE_URL=postgresql://cast:cast@localhost:5432/cast AI_INTEGRATIONS_OPENAI_BASE_URL=https://api.openai.com/v1 AI_INTEGRATIONS_OPENAI_API_KEY=dummy-local-key SESSION_SECRET=local-development-secret-change-me-32chars CAST_BOOTSTRAP_ADMIN_EMAIL=admin@example.edu CAST_BOOTSTRAP_ADMIN_NAME="CAST Bootstrap Admin" CAST_BOOTSTRAP_ADMIN_PASSWORD="Use-A-Strong-Password-2026!" CAST_BOOTSTRAP_INSTITUTION_NAME="CAST Preview Institution" CAST_BOOTSTRAP_INSTITUTION_SLUG=cast-preview ADMIN_USERNAME=admin ADMIN_PASSWORD=admin node --enable-source-maps artifacts/api-server/dist/index.mjs
 ```
 
 Health check:
@@ -268,7 +279,7 @@ Phase 4A adds secured API routes:
 - `POST /api/ingestion/pdf`
 - `POST /api/ingestion/manual-module`
 
-These routes require the Phase 3B CAST identity session and institution context. The legacy admin-only session does not grant access to them unless the development-only CAST v3 preview bridge is explicitly enabled.
+These routes require the Phase 3B CAST identity session and institution context. Use the CAST v3 bootstrap login to create that context; the legacy admin-only session does not grant access to these routes.
 
 ### CAST v3 Programme Map Validation
 

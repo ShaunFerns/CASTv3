@@ -3,7 +3,7 @@ import { createContext, useContext, useState, useEffect, type ReactNode } from "
 interface AuthContextType {
   isAdmin: boolean;
   isLoading: boolean;
-  login: (username: string, password: string) => Promise<void>;
+  login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
 }
 
@@ -14,22 +14,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
-    fetch("/api/auth/me")
-      .then((r) => r.json())
-      .then((data: { isAdmin: boolean }) => {
-        setIsAdmin(data.isAdmin === true);
+    fetch("/api/security/context", { credentials: "include" })
+      .then((r) => {
+        if (!r.ok) throw new Error("No CAST v3 context");
+        return r.json();
       })
-      .catch(() => {
-        setIsAdmin(false);
+      .then((data: { roleKeys?: string[] }) => {
+        setIsAdmin(data.roleKeys?.includes("institution_admin") === true || data.roleKeys?.includes("platform_admin") === true);
+      })
+      .catch(async () => {
+        try {
+          const r = await fetch("/api/auth/me", { credentials: "include" });
+          const data = (await r.json()) as { isAdmin: boolean };
+          setIsAdmin(data.isAdmin === true);
+        } catch {
+          setIsAdmin(false);
+        }
       })
       .finally(() => setIsLoading(false));
   }, []);
 
-  const login = async (username: string, password: string) => {
-    const r = await fetch("/api/auth/login", {
+  const login = async (email: string, password: string) => {
+    const r = await fetch("/api/cast-v3/auth/bootstrap-login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ username, password }),
+      credentials: "include",
+      body: JSON.stringify({ email, password }),
     });
     if (!r.ok) {
       const data = (await r.json()) as { error?: string };
@@ -39,7 +49,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = async () => {
-    await fetch("/api/auth/logout", { method: "POST" });
+    await fetch("/api/cast-v3/auth/logout", { method: "POST", credentials: "include" });
     setIsAdmin(false);
   };
 

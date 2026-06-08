@@ -16,7 +16,7 @@ const allNavItems = [
   { href: "/module-builder", label: "Module Builder", icon: Wrench, exact: false },
   { href: "/review-enhancement", label: "Review & Enhancement", icon: ClipboardCheck, exact: false },
   { href: "/data-quality", label: "Data Quality", icon: Database, exact: false },
-  { href: "/admin/login", label: "Administration", icon: Settings, exact: false },
+  { href: "/admin/login", label: "Log in", icon: Settings, exact: false },
 ];
 
 function getNavItems(location: string) {
@@ -146,7 +146,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                       className="px-2 py-0.5 text-[10px] font-bold rounded tracking-wider"
                       style={{ backgroundColor: "#F5A800", color: "#003865" }}
                     >
-                      ADMIN
+                      CAST V3
                     </span>
                     <Tooltip>
                       <TooltipTrigger asChild>
@@ -171,11 +171,11 @@ export function Layout({ children }: { children: React.ReactNode }) {
                         className="flex items-center gap-1.5 px-2 py-1.5 rounded text-white/40 hover:text-white/70 hover:bg-white/10 transition-all text-xs"
                       >
                         <Lock className="h-3 w-3" aria-hidden="true" />
-                        Admin
+                        Log in
                       </Link>
                     </TooltipTrigger>
                     <TooltipContent side="bottom" className="text-xs">
-                      Sign in for admin access
+                      Sign in to CAST v3
                     </TooltipContent>
                   </Tooltip>
                 )}
@@ -265,7 +265,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                 </Link>
               </li>
 
-              {/* Admin */}
+              {/* Account */}
               {isAdmin ? (
                 <li>
                   <button
@@ -278,7 +278,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                       className="ml-auto px-2 py-0.5 text-[10px] font-bold rounded tracking-wider"
                       style={{ backgroundColor: "#F5A800", color: "#003865" }}
                     >
-                      ADMIN
+                      CAST V3
                     </span>
                   </button>
                 </li>
@@ -289,7 +289,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                     className="flex items-center gap-3 px-4 py-3 rounded text-white/40 hover:text-white/70 hover:bg-white/10 transition-all text-sm font-medium"
                   >
                     <Lock className="h-4 w-4 shrink-0" aria-hidden="true" />
-                    Admin login
+                    CAST v3 login
                   </Link>
                 </li>
               )}
