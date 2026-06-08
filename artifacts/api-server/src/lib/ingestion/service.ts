@@ -34,7 +34,10 @@ import type {
   IngestionPathway,
   IngestionResult,
   ManualModuleIngestionInput,
+  NormalizedAssessmentComponentInput,
+  NormalizedLearningOutcomeInput,
   NormalizedModuleInput,
+  NormalizedProgrammeLinkInput,
   PdfDescriptorIngestionInput,
 } from "./types.js";
 import { logger } from "../logger.js";
@@ -143,35 +146,310 @@ function splitCsvLine(line: string): string[] {
   return cells;
 }
 
-function spreadsheetRows(input: AkariIngestionInput): Record<string, unknown>[] {
+type AkariParsedInput = {
+  modules: NormalizedModuleInput[];
+  rowCount: number;
+  sheetNames: string[];
+  summary: Record<string, unknown>;
+  skippedRows: Array<{ sheet: string; rowNumber: number; reason: string }>;
+};
+
+const akariKnownSheets = new Set([
+  "affiliated programmes",
+  "module overview",
+  "learning outcomes",
+  "module assessments",
+  "module modalities",
+  "indicative syllabus",
+  "indicative syllabus new table",
+  "learning teaching methods",
+  "requisites",
+  "reassessment requirement",
+  "change description",
+]);
+
+function cleanKey(value: string): string {
+  return value.trim().toLowerCase().replace(/\s+/g, " ");
+}
+
+function cell(row: Record<string, unknown>, ...names: string[]): string | undefined {
+  const entries = Object.entries(row);
+  for (const name of names) {
+    const found = entries.find(([key]) => cleanKey(key) === cleanKey(name));
+    if (!found) continue;
+    const value = found[1];
+    if (value !== undefined && value !== null && String(value).trim()) return String(value).trim();
+  }
+  return undefined;
+}
+
+function numberCell(row: Record<string, unknown>, ...names: string[]): number | undefined {
+  const value = cell(row, ...names);
+  if (!value) return undefined;
+  const parsed = Number(value.replace(/[^\d.-]/g, ""));
+  return Number.isFinite(parsed) ? parsed : undefined;
+}
+
+function moduleJoinKey(row: Record<string, unknown>): string | undefined {
+  const moduleId = cell(row, "Module Id", "Module ID");
+  const deliveryPeriodId = cell(row, "Delivery Period Id", "Delivery Period ID");
+  const moduleCode = cell(row, "Module Code");
+  const version = cell(row, "Version");
+  const parts = [moduleId, deliveryPeriodId, moduleCode, version].map((part) => part?.toLowerCase() ?? "");
+  if (!parts.some(Boolean)) return undefined;
+  return parts.join("::");
+}
+
+function moduleSourceIdentifier(row: Record<string, unknown>, fallback: string): string {
+  const moduleId = cell(row, "Module Id", "Module ID");
+  const deliveryPeriodId = cell(row, "Delivery Period Id", "Delivery Period ID");
+  const moduleCode = cell(row, "Module Code");
+  const version = cell(row, "Version");
+  return [moduleId, deliveryPeriodId, moduleCode, version].filter(Boolean).join(":") || fallback;
+}
+
+function preferredModuleTitle(row: Record<string, unknown>): string | undefined {
+  return cell(row, "Module Short Title", "Module Long Title", "Module Title", "Title");
+}
+
+function mergeModuleCore(target: NormalizedModuleInput, row: Record<string, unknown>, fallbackIdentifier: string) {
+  target.moduleCode ??= cell(row, "Module Code");
+  target.moduleTitle ??= preferredModuleTitle(row);
+  target.credits ??= numberCell(row, "ECTS Credits", "Credits", "ECTS");
+  target.stage ??= cell(row, "Level", "Stage");
+  target.semester ??= cell(row, "Semester", "Teaching Period");
+  target.school ??= cell(row, "School");
+  target.department ??= cell(row, "Faculty", "Department");
+  target.campus ??= cell(row, "Campus");
+  target.sourceIdentifier ??= moduleSourceIdentifier(row, fallbackIdentifier);
+}
+
+function addSection(input: NormalizedModuleInput, sectionType: string, title: string, content: string | undefined, raw?: Record<string, unknown>) {
+  if (!content?.trim()) return;
+  input.sections ??= [];
+  input.sections.push({
+    sectionType,
+    title,
+    content: content.trim(),
+  });
+  input.raw ??= {};
+  if (raw) input.raw[`section:${title}`] = raw;
+}
+
+function addProgramme(input: NormalizedModuleInput, programme: NormalizedProgrammeLinkInput) {
+  if (!programme.programmeCode && !programme.programmeName) return;
+  input.programmes ??= [];
+  const key = `${programme.programmeCode ?? ""}:${programme.programmeName ?? ""}:${programme.programmeVersion ?? ""}`;
+  const exists = input.programmes.some((existing) => `${existing.programmeCode ?? ""}:${existing.programmeName ?? ""}:${existing.programmeVersion ?? ""}` === key);
+  if (!exists) input.programmes.push(programme);
+}
+
+function modalityContent(row: Record<string, unknown>): string | undefined {
+  const fields = [
+    ["Module Modalities", cell(row, "Module Modalities")],
+    ["Full time / part time", cell(row, "Full Time / Part Time Module Modalities")],
+    ["Module category", cell(row, "Module Category Module Modalities")],
+    ["Delivery mode", cell(row, "Modality Delivery Mode Module Modalities")],
+    ["Location", cell(row, "Location Module Modalities")],
+  ].filter(([, value]) => value);
+  if (fields.length === 0) return undefined;
+  return fields.map(([label, value]) => `${label}: ${value}`).join("\n");
+}
+
+function createSingleSheetParsed(rows: Record<string, unknown>[]): AkariParsedInput {
+  const modules = rows.map((row, index) => normalizeAkariRow(row, index));
+  return {
+    modules,
+    rowCount: rows.length,
+    sheetNames: [],
+    summary: {
+      rowCount: rows.length,
+      moduleCount: modules.length,
+      parser: "single_sheet",
+    },
+    skippedRows: [],
+  };
+}
+
+function parseAkariWorkbook(workbook: XLSX.WorkBook): AkariParsedInput | undefined {
+  const matchedSheetNames = workbook.SheetNames.filter((name) => akariKnownSheets.has(cleanKey(name)));
+  if (matchedSheetNames.length <= 1) return undefined;
+
+  const modules = new Map<string, NormalizedModuleInput>();
+  const skippedRows: Array<{ sheet: string; rowNumber: number; reason: string }> = [];
+  let rowCount = 0;
+
+  function moduleFor(row: Record<string, unknown>, sheet: string, index: number): NormalizedModuleInput | undefined {
+    const key = moduleJoinKey(row);
+    if (!key) {
+      skippedRows.push({ sheet, rowNumber: index + 2, reason: "Missing shared module identifiers" });
+      return undefined;
+    }
+    const existing = modules.get(key);
+    if (existing) {
+      mergeModuleCore(existing, row, key);
+      return existing;
+    }
+
+    const created: NormalizedModuleInput = {
+      raw: { joinKey: key },
+      sections: [],
+      programmes: [],
+      learningOutcomes: [],
+      assessmentComponents: [],
+      importStats: { rowsSkipped: skippedRows },
+    };
+    mergeModuleCore(created, row, key);
+    modules.set(key, created);
+    return created;
+  }
+
+  for (const sheetName of workbook.SheetNames) {
+    const sheet = workbook.Sheets[sheetName];
+    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: "", raw: false });
+    const normalizedSheetName = cleanKey(sheetName);
+    if (!akariKnownSheets.has(normalizedSheetName)) continue;
+    rowCount += rows.length;
+
+    for (const [index, row] of rows.entries()) {
+      const input = moduleFor(row, sheetName, index);
+      if (!input) continue;
+
+      if (normalizedSheetName === "affiliated programmes") {
+        addProgramme(input, {
+          programmeCode: cell(row, "Programme Code"),
+          programmeName: cell(row, "Programme Title", "Programme Name"),
+          programmeVersion: cell(row, "Programme Version"),
+        });
+      } else if (normalizedSheetName === "module overview") {
+        addSection(input, "aims", "Module Overview", cell(row, "Module Overview"), row);
+      } else if (normalizedSheetName === "learning outcomes") {
+        const description = cell(row, "Learning Outcome Description");
+        if (description) {
+          input.learningOutcomes ??= [];
+          input.learningOutcomes.push({
+            code: cell(row, "Learning Outcome Code"),
+            description,
+            raw: row,
+          });
+        }
+      } else if (normalizedSheetName === "module assessments") {
+        input.assessmentComponents ??= [];
+        input.assessmentComponents.push({
+          category: cell(row, "Assessment Category"),
+          type: cell(row, "Assessment Type"),
+          percentage: numberCell(row, "Percentage of Total"),
+          indicativeWeek: cell(row, "Indicative Week"),
+          semester: cell(row, "Semester"),
+          passFail: cell(row, "Pass/Fail"),
+          threshold: cell(row, "Assessment Threshold"),
+          authenticity: cell(row, "Assessment Authenticity"),
+          learningOutcomesAddressed: cell(row, "Learning Outcomes Addressed"),
+          description: cell(row, "Assessment Description"),
+          raw: row,
+        });
+      } else if (normalizedSheetName === "indicative syllabus") {
+        addSection(input, "indicative_content", "Indicative Syllabus", cell(row, "Indicative Syllabus"), row);
+      } else if (normalizedSheetName === "indicative syllabus new table") {
+        addSection(input, "indicative_content", "Indicative Syllabus", cell(row, "Indicative Syllabus New Table"), row);
+      } else if (normalizedSheetName === "learning teaching methods") {
+        addSection(input, "teaching_and_learning_strategy", "Learning and Teaching Methods", cell(row, "Learning and Teaching Methods"), row);
+      } else if (normalizedSheetName === "requisites") {
+        const requisite = [
+          cell(row, "Requisite Type") ? `Requisite type: ${cell(row, "Requisite Type")}` : undefined,
+          cell(row, "Module Title") ? `Module title: ${cell(row, "Module Title")}` : undefined,
+          cell(row, "Type") ? `Type: ${cell(row, "Type")}` : undefined,
+          cell(row, "Requisites Note"),
+        ].filter(Boolean).join("\n");
+        addSection(input, "requisites", "Requisites", requisite, row);
+      } else if (normalizedSheetName === "reassessment requirement") {
+        const reassessment = [
+          cell(row, "Reassessment Requirement"),
+          cell(row, "Special Repeat Arrangements"),
+        ].filter(Boolean).join("\n\n");
+        addSection(input, "assessment", "Reassessment Requirement", reassessment, row);
+      } else if (normalizedSheetName === "change description") {
+        addSection(input, "other", "Change Description", cell(row, "Change Description"), row);
+      } else if (normalizedSheetName === "module modalities") {
+        addSection(input, "modality", "Module Modalities", modalityContent(row), row);
+      }
+    }
+  }
+
+  for (const input of modules.values()) {
+    const sectionText = input.sections?.map((section) => `${section.title}\n${section.content}`).join("\n\n");
+    input.descriptorText = sectionText || undefined;
+    input.programmeCode = input.programmes?.[0]?.programmeCode;
+    input.programmeName = input.programmes?.[0]?.programmeName;
+    input.importStats = {
+      ...input.importStats,
+      hasOverview: input.sections?.some((section) => section.title === "Module Overview") ?? false,
+      hasLearningOutcomes: Boolean(input.learningOutcomes?.length),
+      hasAssessments: Boolean(input.assessmentComponents?.length),
+      hasModalityEvidence: input.sections?.some((section) => section.sectionType === "modality") ?? false,
+      hasProgrammeLinks: Boolean(input.programmes?.length),
+      rowsSkipped: skippedRows,
+    };
+  }
+
+  const moduleList = [...modules.values()];
+  return {
+    modules: moduleList,
+    rowCount,
+    sheetNames: matchedSheetNames,
+    skippedRows,
+    summary: {
+      parser: "akari_multi_sheet",
+      sheetCount: matchedSheetNames.length,
+      rowCount,
+      moduleCount: moduleList.length,
+      modulesWithOverview: moduleList.filter((module) => module.importStats?.hasOverview).length,
+      modulesWithLearningOutcomes: moduleList.filter((module) => module.importStats?.hasLearningOutcomes).length,
+      modulesWithAssessments: moduleList.filter((module) => module.importStats?.hasAssessments).length,
+      modulesWithModalityEvidence: moduleList.filter((module) => module.importStats?.hasModalityEvidence).length,
+      modulesWithProgrammeLinks: moduleList.filter((module) => module.importStats?.hasProgrammeLinks).length,
+      rowsSkipped: skippedRows.length,
+      skippedRows,
+    },
+  };
+}
+
+function spreadsheetRows(input: AkariIngestionInput): AkariParsedInput {
   validateAkariFileInput(input);
-  if (input.rows) return input.rows;
-  if (input.csvText) return csvRows(input.csvText);
+  if (input.rows) return createSingleSheetParsed(input.rows);
+  if (input.csvText) return createSingleSheetParsed(csvRows(input.csvText));
 
   const buffer = decodeBase64(input.fileBase64);
-  if (!buffer) return [];
+  if (!buffer) return createSingleSheetParsed([]);
 
   const extension = fileExtension(input.fileName);
   const mimeType = input.mimeType?.toLowerCase() ?? "";
   if (extension === ".csv" || mimeType.includes("csv")) {
-    return csvRows(buffer.toString("utf8"));
+    return createSingleSheetParsed(csvRows(buffer.toString("utf8")));
   }
 
   const workbook = XLSX.read(buffer, { type: "buffer" });
+  const multiSheet = parseAkariWorkbook(workbook);
+  if (multiSheet) return multiSheet;
   const firstSheet = workbook.SheetNames[0];
-  if (!firstSheet) return [];
-  return XLSX.utils.sheet_to_json<Record<string, unknown>>(workbook.Sheets[firstSheet], { defval: "" });
+  if (!firstSheet) return createSingleSheetParsed([]);
+  return createSingleSheetParsed(XLSX.utils.sheet_to_json<Record<string, unknown>>(workbook.Sheets[firstSheet], { defval: "" }));
 }
 
-function validateAkariRows(rows: Record<string, unknown>[]) {
-  if (rows.length === 0) {
+function validateAkariRows(parsed: AkariParsedInput) {
+  if (parsed.modules.length === 0) {
     throw new AkariIngestionValidationError("The spreadsheet did not contain any readable rows.", "akari.no_rows");
   }
 
-  const hasRecognisedModuleData = rows.some((row, index) => {
-    const normalized = normalizeAkariRow(row, index);
-    return Boolean(normalized.moduleCode || normalized.moduleTitle || normalized.descriptorText || normalized.programmeCode || normalized.programmeName);
-  });
+  const hasRecognisedModuleData = parsed.modules.some((normalized) => (
+    normalized.moduleCode
+    || normalized.moduleTitle
+    || normalized.descriptorText
+    || normalized.programmeCode
+    || normalized.programmeName
+    || normalized.learningOutcomes?.length
+    || normalized.assessmentComponents?.length
+  ));
 
   if (!hasRecognisedModuleData) {
     throw new AkariIngestionValidationError(
@@ -256,8 +534,12 @@ async function findOrCreateSourceProgramme(
   sourceSystemId: string,
   input: NormalizedModuleInput,
   sourceRecordId: string,
+  programme?: NormalizedProgrammeLinkInput,
 ) {
-  const externalId = input.programmeCode ?? input.programmeName;
+  const programmeCode = programme?.programmeCode ?? input.programmeCode;
+  const programmeName = programme?.programmeName ?? input.programmeName;
+  const programmeVersion = programme?.programmeVersion;
+  const externalId = [programmeCode, programmeVersion].filter(Boolean).join(":") || programmeName;
   if (!externalId) return undefined;
 
   const [existing] = await db
@@ -276,13 +558,13 @@ async function findOrCreateSourceProgramme(
       sourceSystemId,
       sourceRecordId,
       externalId,
-      code: input.programmeCode,
-      name: input.programmeName,
+      code: programmeCode,
+      name: programmeName,
       school: input.school,
       department: input.department,
       campus: input.campus,
-      rawPayload: input.raw ?? {},
-      normalizedPayload: input,
+      rawPayload: programme ? { programme, moduleSourceIdentifier: input.sourceIdentifier } : input.raw ?? {},
+      normalizedPayload: programme ? { ...programme, moduleSourceIdentifier: input.sourceIdentifier } : input,
     })
     .returning();
   return created;
@@ -303,7 +585,29 @@ async function findOrCreateSourceModule(
     .where(and(eq(sourceModulesTable.sourceSystemId, sourceSystemId), eq(sourceModulesTable.externalId, externalId)))
     .limit(1);
 
-  if (existing) return { sourceModule: existing, created: false };
+  if (existing) {
+    const [updated] = await db
+      .update(sourceModulesTable)
+      .set({
+        sourceRecordId,
+        importBatchId,
+        moduleCode: input.moduleCode ?? existing.moduleCode,
+        moduleTitle: input.moduleTitle ?? existing.moduleTitle,
+        credits: input.credits != null ? String(input.credits) : existing.credits,
+        level: input.stage ?? existing.level,
+        stage: input.stage ?? existing.stage,
+        semester: input.semester ?? existing.semester,
+        school: input.school ?? existing.school,
+        department: input.department ?? existing.department,
+        campus: input.campus ?? existing.campus,
+        descriptorText: input.descriptorText ?? existing.descriptorText,
+        rawPayload: row,
+        normalizedPayload: input,
+      })
+      .where(eq(sourceModulesTable.id, existing.id))
+      .returning();
+    return { sourceModule: updated, created: false };
+  }
 
   const [created] = await db
     .insert(sourceModulesTable)
@@ -316,6 +620,7 @@ async function findOrCreateSourceModule(
       moduleCode: input.moduleCode,
       moduleTitle: input.moduleTitle,
       credits: input.credits != null ? String(input.credits) : undefined,
+      level: input.stage,
       stage: input.stage,
       semester: input.semester,
       school: input.school,
@@ -336,6 +641,7 @@ function sourceRecordIdentifier(input: NormalizedModuleInput, index: number): st
 }
 
 function sourceModuleExternalId(input: NormalizedModuleInput, importBatchId: string): string {
+  if (input.sourceIdentifier) return input.sourceIdentifier;
   if (input.moduleCode) return input.moduleCode;
   return `${importBatchId}:${input.sourceIdentifier ?? input.rowNumber ?? "module"}`;
 }
@@ -347,7 +653,28 @@ async function findOrCreateModule(context: IngestionContext, input: NormalizedMo
       .from(modulesTable)
       .where(and(eq(modulesTable.institutionId, context.institutionId), eq(modulesTable.moduleCode, input.moduleCode)))
       .limit(1);
-    if (existing) return existing;
+    if (existing) {
+      const [updated] = await db
+        .update(modulesTable)
+        .set({
+          sourceModuleId: existing.sourceModuleId ?? sourceModuleId,
+          moduleTitle: input.moduleTitle ?? existing.moduleTitle,
+          defaultCredits: input.credits ?? existing.defaultCredits,
+          school: input.school ?? existing.school,
+          department: input.department ?? existing.department,
+          campus: input.campus ?? existing.campus,
+          status: input.moduleCode && (input.moduleTitle ?? existing.moduleTitle) ? "active" : existing.status,
+          metadata: {
+            ...(existing.metadata ?? {}),
+            ingestion: true,
+            stage: input.stage ?? existing.metadata?.["stage"],
+            semester: input.semester ?? existing.metadata?.["semester"],
+          },
+        })
+        .where(eq(modulesTable.id, existing.id))
+        .returning();
+      return updated;
+    }
   }
 
   const [created] = await db
@@ -497,38 +824,181 @@ async function createSectionsAndEvidence(
 
 async function createLearningAndAssessmentFromSections(
   context: IngestionContext,
+  runId: string,
+  itemId: string,
+  moduleId: string,
   moduleDescriptorId: string,
   input: NormalizedModuleInput,
+  created: CreatedAccumulator,
 ) {
+  if (input.learningOutcomes?.length) {
+    for (const [index, outcome] of input.learningOutcomes.entries()) {
+      const [createdOutcome] = await db
+        .insert(learningOutcomesTable)
+        .values({
+          institutionId: context.institutionId,
+          moduleDescriptorId,
+          outcomeCode: outcome.code ?? `LO${index + 1}`,
+          outcomeText: outcome.description,
+          orderIndex: index,
+          status: "draft",
+          metadata: {
+            pathway: "akari_multi_sheet",
+            raw: outcome.raw ?? {},
+          },
+        })
+        .returning();
+
+      const [evidence] = await db
+        .insert(evidenceItemsTable)
+        .values({
+          institutionId: context.institutionId,
+          learningOutcomeId: createdOutcome.id,
+          moduleId,
+          sourceKind: "learning_outcome",
+          evidenceText: outcome.description,
+          confidence: 1,
+          status: "extracted",
+          sourceLocation: { ingestionRunId: runId, ingestionItemId: itemId, learningOutcomeId: createdOutcome.id },
+          metadata: { pathway: "akari_multi_sheet", outcomeCode: outcome.code },
+          createdByUserId: context.actor.userId,
+        })
+        .returning();
+      created.evidenceItemIds.push(evidence.id);
+      await linkRecord(runId, itemId, "created", { evidenceItemId: evidence.id });
+    }
+  }
+
+  if (input.assessmentComponents?.length) {
+    for (const [index, component] of input.assessmentComponents.entries()) {
+      const [createdComponent] = await db
+        .insert(assessmentComponentsTable)
+        .values({
+          institutionId: context.institutionId,
+          moduleDescriptorId,
+          componentName: component.type ?? component.category ?? `Assessment ${index + 1}`,
+          componentType: component.category,
+          assessmentMode: component.type,
+          weighting: component.percentage,
+          description: component.description,
+          orderIndex: index,
+          status: "draft",
+          metadata: {
+            pathway: "akari_multi_sheet",
+            assessmentCategory: component.category,
+            assessmentType: component.type,
+            indicativeWeek: component.indicativeWeek,
+            semester: component.semester,
+            passFail: component.passFail,
+            threshold: component.threshold,
+            authenticity: component.authenticity,
+            learningOutcomesAddressed: component.learningOutcomesAddressed,
+            raw: component.raw ?? {},
+          },
+        })
+        .returning();
+
+      const assessmentEvidence = [
+        component.description,
+        component.learningOutcomesAddressed ? `Learning outcomes addressed: ${component.learningOutcomesAddressed}` : undefined,
+        component.indicativeWeek ? `Indicative week: ${component.indicativeWeek}` : undefined,
+        component.semester ? `Semester: ${component.semester}` : undefined,
+        component.passFail ? `Pass/Fail: ${component.passFail}` : undefined,
+        component.threshold ? `Assessment threshold: ${component.threshold}` : undefined,
+        component.authenticity ? `Assessment authenticity: ${component.authenticity}` : undefined,
+      ].filter(Boolean).join("\n");
+
+      if (assessmentEvidence.trim()) {
+        const [evidence] = await db
+          .insert(evidenceItemsTable)
+          .values({
+            institutionId: context.institutionId,
+            assessmentComponentId: createdComponent.id,
+            moduleId,
+            sourceKind: "assessment_component",
+            evidenceText: assessmentEvidence,
+            confidence: 1,
+            status: "extracted",
+            sourceLocation: { ingestionRunId: runId, ingestionItemId: itemId, assessmentComponentId: createdComponent.id },
+            metadata: { pathway: "akari_multi_sheet", assessmentType: component.type, assessmentCategory: component.category },
+            createdByUserId: context.actor.userId,
+          })
+          .returning();
+        created.evidenceItemIds.push(evidence.id);
+        await linkRecord(runId, itemId, "created", { evidenceItemId: evidence.id });
+      }
+    }
+  }
+
   const sections = input.sections ?? [];
-  const learningSection = sections.find((section) => section.sectionType === "learning_outcomes" && section.content);
+  const learningSection = !input.learningOutcomes?.length
+    ? sections.find((section) => section.sectionType === "learning_outcomes" && section.content)
+    : undefined;
   if (learningSection?.content) {
     const outcomes = learningSection.content
       .split(/\r?\n|(?:^|\s)(?:\d+\.|\-)\s+/)
       .map((outcome) => outcome.trim())
       .filter((outcome) => outcome.length > 10);
     for (const [index, outcome] of outcomes.entries()) {
-      await db.insert(learningOutcomesTable).values({
+      const [createdOutcome] = await db.insert(learningOutcomesTable).values({
         institutionId: context.institutionId,
         moduleDescriptorId,
         outcomeCode: `LO${index + 1}`,
         outcomeText: outcome,
         orderIndex: index,
         status: "draft",
-      });
+      }).returning();
+
+      const [evidence] = await db
+        .insert(evidenceItemsTable)
+        .values({
+          institutionId: context.institutionId,
+          learningOutcomeId: createdOutcome.id,
+          moduleId,
+          sourceKind: "learning_outcome",
+          evidenceText: outcome,
+          confidence: 1,
+          status: "extracted",
+          sourceLocation: { ingestionRunId: runId, ingestionItemId: itemId, learningOutcomeId: createdOutcome.id },
+          metadata: { pathway: "phase4a_ingestion" },
+          createdByUserId: context.actor.userId,
+        })
+        .returning();
+      created.evidenceItemIds.push(evidence.id);
+      await linkRecord(runId, itemId, "created", { evidenceItemId: evidence.id });
     }
   }
 
-  const assessmentSection = sections.find((section) => section.sectionType === "assessment" && section.content);
+  const assessmentSection = !input.assessmentComponents?.length
+    ? sections.find((section) => section.sectionType === "assessment" && section.content)
+    : undefined;
   if (assessmentSection?.content) {
-    await db.insert(assessmentComponentsTable).values({
+    const [component] = await db.insert(assessmentComponentsTable).values({
       institutionId: context.institutionId,
       moduleDescriptorId,
       componentName: "Assessment",
       description: assessmentSection.content,
       orderIndex: 0,
       status: "draft",
-    });
+    }).returning();
+
+    const [evidence] = await db
+      .insert(evidenceItemsTable)
+      .values({
+        institutionId: context.institutionId,
+        assessmentComponentId: component.id,
+        moduleId,
+        sourceKind: "assessment_component",
+        evidenceText: assessmentSection.content,
+        confidence: 1,
+        status: "extracted",
+        sourceLocation: { ingestionRunId: runId, ingestionItemId: itemId, assessmentComponentId: component.id },
+        metadata: { pathway: "phase4a_ingestion" },
+        createdByUserId: context.actor.userId,
+      })
+      .returning();
+    created.evidenceItemIds.push(evidence.id);
+    await linkRecord(runId, itemId, "created", { evidenceItemId: evidence.id });
   }
 }
 
@@ -662,7 +1132,7 @@ async function materializeModule(
   await linkRecord(runId, item.id, "created", { moduleDescriptorId: descriptor.id });
 
   await createSectionsAndEvidence(context, runId, item.id, module.id, descriptor.id, input, created, options.documentVersionId);
-  await createLearningAndAssessmentFromSections(context, descriptor.id, input);
+  await createLearningAndAssessmentFromSections(context, runId, item.id, module.id, descriptor.id, input, created);
 
   const qualityIds = await createQualityFindings(context, runId, input, created, {
     itemId: item.id,
@@ -694,8 +1164,8 @@ export async function ingestAkariExport(context: IngestionContext, input: AkariI
   const errors: IngestionResult["errors"] = [];
 
   try {
-    const rows = spreadsheetRows(input);
-    validateAkariRows(rows);
+    const parsed = spreadsheetRows(input);
+    validateAkariRows(parsed);
     const sourceSystem = await ensureAkariSourceSystem(context);
     const [batch] = await db
       .insert(importBatchesTable)
@@ -706,14 +1176,14 @@ export async function ingestAkariExport(context: IngestionContext, input: AkariI
         status: "running",
         externalBatchId: `ingestion-${run.id}`,
         createdByUserId: context.actor.userId,
-        summary: { fileName: input.fileName, rowCount: rows.length },
+        summary: { fileName: input.fileName, ...parsed.summary },
       })
       .returning();
     created.importBatchIds.push(batch.id);
     await linkRecord(run.id, undefined, "created", { importBatchId: batch.id });
 
-    for (const [index, row] of rows.entries()) {
-      const normalized = normalizeAkariRow(row, index);
+    for (const [index, normalized] of parsed.modules.entries()) {
+      const row = normalized.raw ?? {};
       const recordIdentifier = sourceRecordIdentifier(normalized, index);
       const moduleExternalId = sourceModuleExternalId(normalized, batch.id);
       const [sourceRecord] = await db
@@ -726,7 +1196,7 @@ export async function ingestAkariExport(context: IngestionContext, input: AkariI
           status: "parsed",
           sourceIdentifier: recordIdentifier,
           sourceHash: checksum(JSON.stringify(row)),
-          rowNumber: Number(normalized.rowNumber),
+          rowNumber: normalized.rowNumber != null ? Number(normalized.rowNumber) : index + 1,
           payload: row,
           rawText: normalized.descriptorText,
         })
@@ -746,13 +1216,20 @@ export async function ingestAkariExport(context: IngestionContext, input: AkariI
       if (sourceModuleWasCreated) created.sourceModuleIds.push(sourceModule.id);
       await linkRecord(run.id, undefined, sourceModuleWasCreated ? "created" : "created_or_matched", { sourceModuleId: sourceModule.id });
 
-      const sourceProgramme = await findOrCreateSourceProgramme(context, batch.id, sourceSystem.id, normalized, sourceRecord.id);
-      if (sourceProgramme) {
-        created.sourceProgrammeIds.push(sourceProgramme.id);
-        await linkRecord(run.id, undefined, "created_or_matched", { sourceProgrammeId: sourceProgramme.id });
+      const programmeLinks = normalized.programmes?.length ? normalized.programmes : [{ programmeCode: normalized.programmeCode, programmeName: normalized.programmeName }];
+      const sourceProgrammes = [];
+      for (const programme of programmeLinks) {
+        const sourceProgramme = await findOrCreateSourceProgramme(context, batch.id, sourceSystem.id, normalized, sourceRecord.id, programme);
+        if (sourceProgramme) {
+          sourceProgrammes.push(sourceProgramme);
+          created.sourceProgrammeIds.push(sourceProgramme.id);
+          await linkRecord(run.id, undefined, "created_or_matched", { sourceProgrammeId: sourceProgramme.id });
+        }
       }
 
-      if (normalized.stage || normalized.semester || normalized.credits) {
+      if (normalized.stage || normalized.semester || normalized.credits || sourceProgrammes.length > 0) {
+        const programmeTargets = sourceProgrammes.length ? sourceProgrammes : [undefined];
+        for (const sourceProgramme of programmeTargets) {
         const [sourceStructureItem] = await db
           .insert(sourceStructureItemsTable)
           .values({
@@ -762,7 +1239,7 @@ export async function ingestAkariExport(context: IngestionContext, input: AkariI
             sourceRecordId: sourceRecord.id,
             sourceProgrammeId: sourceProgramme?.id,
             sourceModuleId: sourceModule.id,
-            externalId: `${sourceRecord.id}:structure`,
+            externalId: `${sourceRecord.id}:structure:${sourceProgramme?.id ?? "module"}`,
             stage: normalized.stage,
             semester: normalized.semester,
             credits: normalized.credits != null ? String(normalized.credits) : undefined,
@@ -772,6 +1249,7 @@ export async function ingestAkariExport(context: IngestionContext, input: AkariI
           .returning();
         created.sourceStructureItemIds.push(sourceStructureItem.id);
         await linkRecord(run.id, undefined, "created", { sourceStructureItemId: sourceStructureItem.id });
+        }
       }
 
       await materializeModule(context, run.id, index, normalized, created, {
@@ -788,17 +1266,34 @@ export async function ingestAkariExport(context: IngestionContext, input: AkariI
         status: created.dataQualityResultIds.length > 0 ? "completed_with_errors" : "completed",
         completedAt: new Date(),
         summary: {
-          rowCount: rows.length,
+          ...parsed.summary,
           moduleCount: created.moduleIds.length,
           descriptorCount: created.moduleDescriptorIds.length,
           evidenceCount: created.evidenceItemIds.length,
           qualityIssueCount: created.dataQualityResultIds.length,
+          modulesWithOverview: parsed.modules.filter((module) => module.importStats?.hasOverview).length,
+          modulesWithLearningOutcomes: parsed.modules.filter((module) => module.importStats?.hasLearningOutcomes).length,
+          modulesWithAssessments: parsed.modules.filter((module) => module.importStats?.hasAssessments).length,
+          modulesWithModalityEvidence: parsed.modules.filter((module) => module.importStats?.hasModalityEvidence).length,
+          modulesWithProgrammeLinks: parsed.modules.filter((module) => module.importStats?.hasProgrammeLinks).length,
+          rowsSkipped: parsed.skippedRows.length,
+          skippedRows: parsed.skippedRows,
         },
       })
       .where(eq(importBatchesTable.id, batch.id));
 
     const status = created.dataQualityResultIds.length > 0 ? "completed_with_issues" : "completed";
-    await updateRunComplete(run.id, status, { rowCount: rows.length, created });
+    await updateRunComplete(run.id, status, {
+      ...parsed.summary,
+      created,
+      modulesWithOverview: parsed.modules.filter((module) => module.importStats?.hasOverview).length,
+      modulesWithLearningOutcomes: parsed.modules.filter((module) => module.importStats?.hasLearningOutcomes).length,
+      modulesWithAssessments: parsed.modules.filter((module) => module.importStats?.hasAssessments).length,
+      modulesWithModalityEvidence: parsed.modules.filter((module) => module.importStats?.hasModalityEvidence).length,
+      modulesWithProgrammeLinks: parsed.modules.filter((module) => module.importStats?.hasProgrammeLinks).length,
+      rowsSkipped: parsed.skippedRows.length,
+      skippedRows: parsed.skippedRows,
+    });
     return { runId: run.id, status, created, errors };
   } catch (error) {
     const validationError = isAkariValidationError(error);

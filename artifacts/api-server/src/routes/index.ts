@@ -14,6 +14,7 @@ import ingestionRouter from "./ingestion/index.js";
 import programmeWorkspaceRouter from "./programmeWorkspace/index.js";
 import programmeMapRouter from "./programmeMap/index.js";
 import curriculumModulesRouter from "./curriculumModules/index.js";
+import claimsRouter from "./claims/index.js";
 
 const router: IRouter = Router();
 
@@ -24,6 +25,7 @@ router.use(ingestionRouter);
 router.use(programmeWorkspaceRouter);
 router.use(programmeMapRouter);
 router.use(curriculumModulesRouter);
+router.use(claimsRouter);
 router.use(modulesRouter);
 router.use(dashboardRouter);
 router.use(exportRouter);

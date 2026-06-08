@@ -5,10 +5,12 @@ import {
   BookOpen,
   CheckCircle2,
   ClipboardCheck,
+  FileSearch,
   Layers,
   Lightbulb,
   Puzzle,
   ShieldCheck,
+  Sparkles,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -17,6 +19,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 type ModuleSummary = {
   id: string;
   recordKind: "canonical" | "source_only";
+  moduleId?: string;
+  sourceModuleId?: string;
   moduleCode?: string | null;
   moduleTitle?: string | null;
   credits?: number | null;
@@ -26,6 +30,7 @@ type ModuleSummary = {
   descriptorStatus: string;
   evidenceCount: number;
   assessmentComponentCount: number;
+  modalitySummary?: string | null;
   dataQualityFlags: Array<{ id: string; title: string; severity: string; status: string }>;
   sourceLabel: string;
 };
@@ -77,6 +82,54 @@ type ModuleBuilderDetail = {
   nextSteps: string[];
 };
 
+type EvidenceClaim = {
+  id: string;
+  title?: string | null;
+  claimText: string;
+  rationale?: string | null;
+  confidence?: number | null;
+  claimType: string;
+  status: string;
+  framework?: { key?: string | null; name?: string | null; versionLabel?: string | null };
+  lens?: { key?: string | null; name?: string | null; versionLabel?: string | null };
+  competency?: { id?: string | null; key?: string | null; name?: string | null; domain?: string | null };
+  analysisRun: {
+    id: string;
+    status: string;
+    startedAt?: string | null;
+    completedAt?: string | null;
+    model?: string | null;
+    provider?: string | null;
+    promptVersion?: string | null;
+  };
+  evidence: Array<{
+    id: string;
+    sourceKind: string;
+    evidenceText?: string | null;
+    descriptorSectionId?: string | null;
+    learningOutcomeId?: string | null;
+    assessmentComponentId?: string | null;
+    documentSectionId?: string | null;
+    relevance?: number | null;
+    relationship: string;
+  }>;
+  createdAt?: string | null;
+};
+
+type ModuleClaimsResponse = {
+  claims: EvidenceClaim[];
+  total: number;
+};
+
+type ClaimGenerationResponse = {
+  analysisRunId?: string;
+  claimsCreated: number;
+  claimsSkipped: number;
+  evidenceConsidered: number;
+  message: string;
+  claims: EvidenceClaim[];
+};
+
 type DesignSummary = {
   evaluationCount: number;
   evidenceLinkCount: number;
@@ -111,8 +164,8 @@ const builderLayers = [
   },
 ];
 
-async function api<T>(path: string): Promise<T> {
-  const response = await fetch(path, { credentials: "include" });
+async function api<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const response = await fetch(path, { credentials: "include", ...init });
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(payload.message ?? `Request failed with ${response.status}`);
   return payload as T;
@@ -167,6 +220,14 @@ function priorityClass(priority: "low" | "medium" | "high") {
   return "border-slate-200 bg-slate-50 text-slate-700";
 }
 
+function confidenceLabel(value: number | null | undefined) {
+  return typeof value === "number" ? `${Math.round(value * 100)}% confidence` : "Confidence not recorded";
+}
+
+function shortRunId(id: string) {
+  return id.slice(0, 8);
+}
+
 function FoundationOnly() {
   return (
     <>
@@ -213,8 +274,26 @@ function FoundationOnly() {
 
 export default function ModuleBuilder() {
   const [detail, setDetail] = useState<ModuleBuilderDetail | null>(null);
+  const [claims, setClaims] = useState<EvidenceClaim[]>([]);
   const [error, setError] = useState<string | null>(null);
+  const [claimsMessage, setClaimsMessage] = useState<string | null>(null);
+  const [claimsError, setClaimsError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [claimsLoading, setClaimsLoading] = useState(false);
+  const [generatingClaims, setGeneratingClaims] = useState(false);
+
+  async function loadClaims(moduleId: string) {
+    setClaimsLoading(true);
+    setClaimsError(null);
+    try {
+      const result = await api<ModuleClaimsResponse>(`/api/claims/modules/${encodeURIComponent(moduleId)}`);
+      setClaims(result.claims);
+    } catch (err) {
+      setClaimsError(err instanceof Error ? err.message : "Evidence claims could not be loaded.");
+    } finally {
+      setClaimsLoading(false);
+    }
+  }
 
   useEffect(() => {
     const id = selectedModuleId();
@@ -227,7 +306,10 @@ export default function ModuleBuilder() {
       setError(null);
       try {
         const result = await api<ModuleBuilderDetail>(`/api/curriculum/modules/${encodeURIComponent(selectedId)}/builder-detail`);
-        if (!cancelled) setDetail(result);
+        if (!cancelled) {
+          setDetail(result);
+          if (result.module.moduleId) void loadClaims(result.module.moduleId);
+        }
       } catch (err) {
         if (!cancelled) setError(err instanceof Error ? err.message : "Selected module could not be loaded.");
       } finally {
@@ -240,6 +322,22 @@ export default function ModuleBuilder() {
       cancelled = true;
     };
   }, []);
+
+  async function generateClaims() {
+    if (!module?.moduleId) return;
+    setGeneratingClaims(true);
+    setClaimsError(null);
+    setClaimsMessage(null);
+    try {
+      const result = await api<ClaimGenerationResponse>(`/api/claims/modules/${encodeURIComponent(module.moduleId)}/generate`, { method: "POST" });
+      setClaims(result.claims);
+      setClaimsMessage(result.message);
+    } catch (err) {
+      setClaimsError(err instanceof Error ? err.message : "GreenComp claims could not be generated.");
+    } finally {
+      setGeneratingClaims(false);
+    }
+  }
 
   const module = detail?.module;
 
@@ -290,6 +388,7 @@ export default function ModuleBuilder() {
                   <Badge variant="outline">Descriptor: {module.descriptorStatus.replace(/_/g, " ")}</Badge>
                   <Badge variant="outline">{module.evidenceCount} evidence items</Badge>
                   <Badge variant="outline">{module.assessmentComponentCount} assessment components</Badge>
+                  {module.modalitySummary && <Badge variant="outline">Modality evidence</Badge>}
                   <Badge variant="outline">{module.dataQualityFlags.length} quality flags</Badge>
                 </div>
               </div>
@@ -366,6 +465,68 @@ export default function ModuleBuilder() {
                     ))}
                   </div>
                 ) : <EmptyState text="No framework evidence observations are available for this module yet." />}
+              </SectionCard>
+
+              <SectionCard title="Evidence Claims">
+                <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+                  <div className="text-sm leading-6 text-slate-600">
+                    Provisional GreenComp claims link module evidence to a traceable analysis run. They are not institutional findings.
+                  </div>
+                  <Button
+                    type="button"
+                    className="bg-blue-950 hover:bg-blue-900"
+                    disabled={!module.moduleId || generatingClaims}
+                    onClick={() => void generateClaims()}
+                  >
+                    <Sparkles className="mr-2 h-4 w-4" />
+                    {generatingClaims ? "Generating..." : "Generate GreenComp Claims"}
+                  </Button>
+                </div>
+                {claimsMessage && <div className="mb-3 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{claimsMessage}</div>}
+                {claimsError && <div className="mb-3 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">{claimsError}</div>}
+                {claimsLoading ? (
+                  <EmptyState text="Loading evidence claims..." />
+                ) : claims.length > 0 ? (
+                  <div className="space-y-4">
+                    {claims.map((claim) => (
+                      <div key={claim.id} className="rounded border border-slate-200 bg-white p-4">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge className="bg-violet-100 text-violet-800 hover:bg-violet-100">AI-supported claim</Badge>
+                          <Badge variant="outline">Not yet reviewed</Badge>
+                          <Badge variant="outline">{claim.framework?.name ?? "Framework"} {claim.framework?.versionLabel ?? ""}</Badge>
+                          <Badge variant="outline">{confidenceLabel(claim.confidence)}</Badge>
+                        </div>
+                        <h3 className="mt-3 font-semibold text-slate-950">{claim.title ?? "Evidence claim"}</h3>
+                        <p className="mt-2 text-sm leading-6 text-slate-700">{claim.claimText}</p>
+                        {claim.rationale && <p className="mt-2 text-sm leading-6 text-slate-600">{claim.rationale}</p>}
+                        <div className="mt-3 grid gap-2 text-xs text-slate-500 md:grid-cols-3">
+                          <span>Analysis run: {shortRunId(claim.analysisRun.id)}</span>
+                          <span>Model: {claim.analysisRun.model ?? "not recorded"}</span>
+                          <span>Prompt: {claim.analysisRun.promptVersion ?? "not recorded"}</span>
+                        </div>
+                        <div className="mt-4 space-y-2">
+                          <div className="flex items-center gap-2 text-sm font-semibold text-slate-900">
+                            <FileSearch className="h-4 w-4" />
+                            Supporting evidence ({claim.evidence.length})
+                          </div>
+                          {claim.evidence.map((item) => (
+                            <div key={item.id} className="rounded bg-slate-50 px-3 py-2 text-sm text-slate-600">
+                              <div className="mb-1 flex flex-wrap gap-2">
+                                <Badge variant="outline" className="bg-white">{item.sourceKind.replace(/_/g, " ")}</Badge>
+                                {item.descriptorSectionId && <Badge variant="outline" className="bg-white">descriptor section</Badge>}
+                                {item.learningOutcomeId && <Badge variant="outline" className="bg-white">learning outcome</Badge>}
+                                {item.assessmentComponentId && <Badge variant="outline" className="bg-white">assessment component</Badge>}
+                              </div>
+                              <p className="leading-5">{item.evidenceText ?? "Evidence text is not available for preview."}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <EmptyState text={module.moduleId ? "No evidence claims have been generated for this module yet." : "Create or reconcile a curated module before generating evidence claims."} />
+                )}
               </SectionCard>
             </div>
 

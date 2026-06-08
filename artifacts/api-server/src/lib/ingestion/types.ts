@@ -6,6 +6,32 @@ export type DescriptorSectionInput = {
   content?: string;
 };
 
+export type NormalizedProgrammeLinkInput = {
+  programmeCode?: string;
+  programmeName?: string;
+  programmeVersion?: string;
+};
+
+export type NormalizedLearningOutcomeInput = {
+  code?: string;
+  description: string;
+  raw?: Record<string, unknown>;
+};
+
+export type NormalizedAssessmentComponentInput = {
+  category?: string;
+  type?: string;
+  percentage?: number;
+  indicativeWeek?: string;
+  semester?: string;
+  passFail?: string;
+  threshold?: string;
+  authenticity?: string;
+  learningOutcomesAddressed?: string;
+  description?: string;
+  raw?: Record<string, unknown>;
+};
+
 export type NormalizedModuleInput = {
   moduleCode?: string;
   moduleTitle?: string;
@@ -19,9 +45,20 @@ export type NormalizedModuleInput = {
   campus?: string;
   descriptorText?: string;
   sections?: DescriptorSectionInput[];
+  programmes?: NormalizedProgrammeLinkInput[];
+  learningOutcomes?: NormalizedLearningOutcomeInput[];
+  assessmentComponents?: NormalizedAssessmentComponentInput[];
   raw?: Record<string, unknown>;
   sourceIdentifier?: string;
   rowNumber?: string | number;
+  importStats?: {
+    hasOverview?: boolean;
+    hasLearningOutcomes?: boolean;
+    hasAssessments?: boolean;
+    hasModalityEvidence?: boolean;
+    hasProgrammeLinks?: boolean;
+    rowsSkipped?: Array<{ sheet: string; rowNumber: number; reason: string }>;
+  };
 };
 
 export type IngestionActor = {

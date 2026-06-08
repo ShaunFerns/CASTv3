@@ -23,6 +23,7 @@ type ModuleLibraryItem = {
   descriptorCount: number;
   evidenceCount: number;
   assessmentComponentCount: number;
+  modalitySummary?: string | null;
   dataQualityFlags: Array<{ id: string; title: string; severity: string; status: string }>;
   sourceLabel: string;
   updatedAt?: string | null;
@@ -278,6 +279,7 @@ export default function ModuleLibrary() {
                     {module.evidenceCount} evidence
                   </Badge>
                   <Badge variant="outline">{module.assessmentComponentCount} assessment</Badge>
+                  {module.modalitySummary && <Badge variant="outline">Modality</Badge>}
                   {module.dataQualityFlags.length > 0 && (
                     <Badge variant="outline" className="border-amber-200 bg-amber-50 text-amber-700">
                       {module.dataQualityFlags.length} quality flag{module.dataQualityFlags.length === 1 ? "" : "s"}

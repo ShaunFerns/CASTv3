@@ -57,6 +57,7 @@ export type ModuleLibraryItem = {
   descriptorCount: number;
   evidenceCount: number;
   assessmentComponentCount: number;
+  modalitySummary?: string | null;
   dataQualityFlags: Array<{ id: string; title: string; severity: string; status: string }>;
   sourceLabel: "Curated module" | "Imported source only";
   updatedAt?: string | null;
@@ -274,6 +275,7 @@ export async function listModuleLibrary(context: ActorContext, filters: ModuleLi
 
   const descriptorIds = descriptors.map((descriptor) => descriptor.id);
   const descriptorByModule = new Map<string, typeof descriptors>();
+  const descriptorToModule = new Map(descriptors.map((descriptor) => [descriptor.id, descriptor.moduleId]));
   for (const descriptor of descriptors) {
     descriptorByModule.set(descriptor.moduleId, [...(descriptorByModule.get(descriptor.moduleId) ?? []), descriptor]);
   }
@@ -287,11 +289,23 @@ export async function listModuleLibrary(context: ActorContext, filters: ModuleLi
       .from(assessmentComponentsTable)
       .where(and(eq(assessmentComponentsTable.institutionId, context.institutionId), inArray(assessmentComponentsTable.moduleDescriptorId, descriptorIds)))
       .groupBy(assessmentComponentsTable.moduleDescriptorId);
-    const descriptorToModule = new Map(descriptors.map((descriptor) => [descriptor.id, descriptor.moduleId]));
     for (const row of assessmentRows) {
       const moduleId = descriptorToModule.get(row.descriptorId);
       if (!moduleId) continue;
       assessmentCounts.set(moduleId, (assessmentCounts.get(moduleId) ?? 0) + Number(row.total));
+    }
+  }
+
+  const modalityByModule = new Map<string, string>();
+  if (descriptorIds.length > 0) {
+    const modalityRows = await db
+      .select()
+      .from(descriptorSectionsTable)
+      .where(and(eq(descriptorSectionsTable.institutionId, context.institutionId), inArray(descriptorSectionsTable.moduleDescriptorId, descriptorIds), eq(descriptorSectionsTable.sectionType, "modality")));
+    for (const section of modalityRows) {
+      const moduleId = descriptorToModule.get(section.moduleDescriptorId);
+      if (!moduleId || !section.content?.trim()) continue;
+      modalityByModule.set(moduleId, section.content.replace(/\s+/g, " ").trim().slice(0, 140));
     }
   }
 
@@ -446,6 +460,7 @@ export async function listModuleLibrary(context: ActorContext, filters: ModuleLi
       descriptorCount: moduleDescriptors.length,
       evidenceCount: evidenceCounts.get(module.id) ?? 0,
       assessmentComponentCount: assessmentCounts.get(module.id) ?? 0,
+      modalitySummary: modalityByModule.get(module.id) ?? null,
       dataQualityFlags: uniqueBy(qualityByModule.get(module.id) ?? [], (flag) => flag.id),
       sourceLabel: "Curated module",
       updatedAt: module.updatedAt?.toISOString() ?? null,
@@ -495,6 +510,7 @@ export async function listModuleLibrary(context: ActorContext, filters: ModuleLi
       descriptorCount: 0,
       evidenceCount: 0,
       assessmentComponentCount: 0,
+      modalitySummary: null,
       dataQualityFlags: uniqueBy(qualityBySourceModule.get(sourceModule.id) ?? [], (flag) => flag.id),
       sourceLabel: "Imported source only",
       updatedAt: sourceModule.updatedAt?.toISOString() ?? null,
