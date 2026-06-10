@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, or } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, or } from "drizzle-orm";
 import {
   aiClaimsTable,
   assessmentComponentsTable,
@@ -20,6 +20,8 @@ import {
   learningOutcomesTable,
   moduleDescriptorsTable,
   modulesTable,
+  programmeMapsTable,
+  programmeMapVersionsTable,
   programmeVersionsTable,
   reconciliationLinksTable,
   sourceModulesTable,
@@ -1183,6 +1185,432 @@ export async function getProgrammeOverview(context: ActorContext, programmeVersi
     },
     dataQuality,
     modules: moduleStatusRows.sort((a, b) => `${a.moduleCode ?? ""}${a.moduleTitle ?? ""}`.localeCompare(`${b.moduleCode ?? ""}${b.moduleTitle ?? ""}`)),
+  };
+}
+
+type ProgrammeComparisonMode = "programme_version" | "snapshot" | "upload";
+type ComparisonMetric = { left: number; right: number; delta: number };
+type FrameworkCoverageRecord = Record<string, { totalCompetencies: number; observedCompetencies: number; coveragePercent: number }>;
+type FrameworkCompetencyMarker = {
+  id: string;
+  key: string;
+  name: string;
+  frameworkKey: string;
+};
+type ComparableModule = {
+  key: string;
+  moduleId?: string | null;
+  moduleCode?: string | null;
+  moduleTitle?: string | null;
+  stage?: string | null;
+  semester?: string | null;
+  credits?: number | null;
+  evidenceCount?: number;
+  claimCount?: number;
+  reviewStatus?: string;
+  dataQualityStatus?: string;
+};
+type ComparisonSource = {
+  label: string;
+  modules: ComparableModule[];
+  frameworkCoverage: Partial<FrameworkCoverageRecord>;
+  frameworkCompetencies: Record<string, FrameworkCompetencyMarker[]>;
+  maturityDistribution: Record<string, number>;
+  reviewStatus: Record<string, number>;
+  dataQuality: Record<string, number>;
+};
+
+const comparisonFrameworkKeys = ["greencomp", "lifecomp", "entrecomp", "digcomp"] as const;
+
+function numericMetric(left: number | undefined, right: number | undefined): ComparisonMetric {
+  const safeLeft = Number(left ?? 0);
+  const safeRight = Number(right ?? 0);
+  return { left: safeLeft, right: safeRight, delta: safeRight - safeLeft };
+}
+
+function moduleComparisonKey(module: ComparableModule): string {
+  return (module.moduleCode?.trim().toLowerCase() || module.moduleId || module.key).toLowerCase();
+}
+
+function comparableModulesFromOverview(overview: Awaited<ReturnType<typeof getProgrammeOverview>>): ComparableModule[] {
+  return overview.modules.map((module) => ({
+    key: module.moduleId,
+    moduleId: module.moduleId,
+    moduleCode: module.moduleCode,
+    moduleTitle: module.moduleTitle,
+    evidenceCount: module.evidenceCount,
+    claimCount: module.claimCount,
+    reviewStatus: module.reviewStatus,
+    dataQualityStatus: module.dataQualityStatus,
+  }));
+}
+
+function comparableModulesFromProjection(projection: Record<string, unknown>): ComparableModule[] {
+  const rows = Array.isArray(projection["rows"]) ? projection["rows"] : [];
+  return rows.map((raw, index) => {
+    const row = raw && typeof raw === "object" ? raw as Record<string, unknown> : {};
+    const module = row["module"] && typeof row["module"] === "object" ? row["module"] as Record<string, unknown> : {};
+    const evidence = row["evidence"] && typeof row["evidence"] === "object" ? row["evidence"] as Record<string, unknown> : {};
+    return {
+      key: String(row["id"] ?? module["id"] ?? index),
+      moduleId: typeof module["id"] === "string" ? module["id"] : undefined,
+      moduleCode: typeof module["code"] === "string" ? module["code"] : undefined,
+      moduleTitle: typeof module["title"] === "string" ? module["title"] : undefined,
+      stage: typeof row["stage"] === "string" ? row["stage"] : undefined,
+      semester: typeof row["semester"] === "string" ? row["semester"] : undefined,
+      credits: typeof row["credits"] === "number" ? row["credits"] : null,
+      evidenceCount: typeof evidence["count"] === "number" ? evidence["count"] : 0,
+    };
+  });
+}
+
+function comparableModulesFromSourceRows(modules: Array<typeof sourceModulesTable.$inferSelect>, structures: Array<typeof sourceStructureItemsTable.$inferSelect>): ComparableModule[] {
+  const sourceById = new Map(modules.map((module) => [module.id, module]));
+  const rows = structures.length > 0
+    ? structures.map((structure) => {
+        const sourceModule = structure.sourceModuleId ? sourceById.get(structure.sourceModuleId) : undefined;
+        return {
+          key: structure.externalId ?? structure.id,
+          moduleId: sourceModule?.id ?? structure.sourceModuleId,
+          moduleCode: sourceModule?.moduleCode,
+          moduleTitle: sourceModule?.moduleTitle,
+          stage: structure.stage ?? sourceModule?.stage,
+          semester: structure.semester ?? sourceModule?.semester,
+          credits: Number(structure.credits ?? sourceModule?.credits) || null,
+        };
+      })
+    : modules.map((module) => ({
+        key: module.externalId ?? module.id,
+        moduleId: module.id,
+        moduleCode: module.moduleCode,
+        moduleTitle: module.moduleTitle,
+        stage: module.stage,
+        semester: module.semester,
+        credits: Number(module.credits) || null,
+      }));
+  const byKey = new Map<string, ComparableModule>();
+  for (const row of rows) byKey.set(moduleComparisonKey(row), row);
+  return [...byKey.values()];
+}
+
+function compareModuleSets(leftModules: ComparableModule[], rightModules: ComparableModule[]) {
+  const leftByKey = new Map(leftModules.map((module) => [moduleComparisonKey(module), module]));
+  const rightByKey = new Map(rightModules.map((module) => [moduleComparisonKey(module), module]));
+  const keys = [...new Set([...leftByKey.keys(), ...rightByKey.keys()])].sort();
+
+  const added: ComparableModule[] = [];
+  const removed: ComparableModule[] = [];
+  const movedStage: Array<{ before: ComparableModule; after: ComparableModule }> = [];
+  const movedSemester: Array<{ before: ComparableModule; after: ComparableModule }> = [];
+  const creditChanges: Array<{ before: ComparableModule; after: ComparableModule; delta: number }> = [];
+
+  for (const key of keys) {
+    const before = leftByKey.get(key);
+    const after = rightByKey.get(key);
+    if (!before && after) added.push(after);
+    if (before && !after) removed.push(before);
+    if (!before || !after) continue;
+    if ((before.stage ?? "") !== (after.stage ?? "")) movedStage.push({ before, after });
+    if ((before.semester ?? "") !== (after.semester ?? "")) movedSemester.push({ before, after });
+    if ((before.credits ?? null) !== (after.credits ?? null)) creditChanges.push({ before, after, delta: Number(after.credits ?? 0) - Number(before.credits ?? 0) });
+  }
+
+  return {
+    modulesAdded: added,
+    modulesRemoved: removed,
+    modulesMovedStage: movedStage,
+    modulesMovedSemester: movedSemester,
+    creditChanges,
+    structureChanges: movedStage.length + movedSemester.length + creditChanges.length,
+  };
+}
+
+function emptyFrameworkCompetencies(): Record<string, FrameworkCompetencyMarker[]> {
+  return Object.fromEntries(comparisonFrameworkKeys.map((key) => [key, []]));
+}
+
+async function frameworkCompetencyMarkersForProgramme(
+  context: ActorContext,
+  programmeVersionId: string,
+  modules: ComparableModule[],
+): Promise<Record<string, FrameworkCompetencyMarker[]>> {
+  const moduleIds = modules.map((module) => module.moduleId).filter((id): id is string => Boolean(id));
+  const rows = await db
+    .select({
+      competency: competenciesTable,
+      framework: frameworksTable,
+    })
+    .from(competencyEvaluationsTable)
+    .leftJoin(competenciesTable, eq(competencyEvaluationsTable.competencyId, competenciesTable.id))
+    .leftJoin(frameworkVersionsTable, eq(competenciesTable.frameworkVersionId, frameworkVersionsTable.id))
+    .leftJoin(frameworksTable, eq(frameworkVersionsTable.frameworkId, frameworksTable.id))
+    .where(and(
+      eq(competencyEvaluationsTable.institutionId, context.institutionId),
+      moduleIds.length
+        ? or(eq(competencyEvaluationsTable.programmeVersionId, programmeVersionId), inArray(competencyEvaluationsTable.moduleId, moduleIds))
+        : eq(competencyEvaluationsTable.programmeVersionId, programmeVersionId),
+    ));
+
+  const markers = emptyFrameworkCompetencies();
+  const seen = new Set<string>();
+  for (const row of rows) {
+    if (!row.competency || !row.framework || !comparisonFrameworkKeys.includes(row.framework.key as typeof comparisonFrameworkKeys[number])) continue;
+    const seenKey = `${row.framework.key}:${row.competency.id}`;
+    if (seen.has(seenKey)) continue;
+    seen.add(seenKey);
+    markers[row.framework.key].push({
+      id: row.competency.id,
+      key: row.competency.key,
+      name: row.competency.name,
+      frameworkKey: row.framework.key,
+    });
+  }
+  return markers;
+}
+
+function compareCompetencyMarkers(left: FrameworkCompetencyMarker[], right: FrameworkCompetencyMarker[]) {
+  const leftById = new Map(left.map((competency) => [competency.id, competency]));
+  const rightById = new Map(right.map((competency) => [competency.id, competency]));
+  return {
+    competenciesAdded: right.filter((competency) => !leftById.has(competency.id)),
+    competenciesRemoved: left.filter((competency) => !rightById.has(competency.id)),
+  };
+}
+
+function compareFrameworks(
+  left: Partial<FrameworkCoverageRecord>,
+  right: Partial<FrameworkCoverageRecord>,
+  leftCompetencies: Record<string, FrameworkCompetencyMarker[]>,
+  rightCompetencies: Record<string, FrameworkCompetencyMarker[]>,
+) {
+  return Object.fromEntries(comparisonFrameworkKeys.map((key) => {
+    const leftCoverage = left[key] ?? { totalCompetencies: 0, observedCompetencies: 0, coveragePercent: 0 };
+    const rightCoverage = right[key] ?? { totalCompetencies: 0, observedCompetencies: 0, coveragePercent: 0 };
+    const competencyChanges = compareCompetencyMarkers(leftCompetencies[key] ?? [], rightCompetencies[key] ?? []);
+    return [key, {
+      observedCompetencies: numericMetric(leftCoverage.observedCompetencies, rightCoverage.observedCompetencies),
+      coveragePercent: numericMetric(leftCoverage.coveragePercent, rightCoverage.coveragePercent),
+      totalCompetencies: numericMetric(leftCoverage.totalCompetencies, rightCoverage.totalCompetencies),
+      ...competencyChanges,
+    }];
+  }));
+}
+
+function compareCountRecords(left: Record<string, number>, right: Record<string, number>) {
+  const keys = [...new Set([...Object.keys(left), ...Object.keys(right)])].sort();
+  return Object.fromEntries(keys.map((key) => [key, numericMetric(left[key], right[key])]));
+}
+
+function comparisonToCsv(comparison: Awaited<ReturnType<typeof compareProgrammeStates>>): string {
+  const rows = [
+    ["Section", "Metric", "Left", "Right", "Delta"],
+    ["summary", "modulesAdded", "0", comparison.summary.modulesAdded, comparison.summary.modulesAdded],
+    ["summary", "modulesRemoved", "0", comparison.summary.modulesRemoved, comparison.summary.modulesRemoved],
+    ["summary", "frameworkChanges", "0", comparison.summary.frameworkChanges, comparison.summary.frameworkChanges],
+    ["summary", "maturityChanges", "0", comparison.summary.maturityChanges, comparison.summary.maturityChanges],
+    ["summary", "reviewChanges", "0", comparison.summary.reviewChanges, comparison.summary.reviewChanges],
+    ["summary", "dataQualityChanges", "0", comparison.summary.dataQualityChanges, comparison.summary.dataQualityChanges],
+    ...Object.entries(comparison.frameworkChanges.frameworks).flatMap(([framework, metrics]) => [
+      ["framework", `${framework}.observedCompetencies`, metrics.observedCompetencies.left, metrics.observedCompetencies.right, metrics.observedCompetencies.delta],
+      ["framework", `${framework}.coveragePercent`, metrics.coveragePercent.left, metrics.coveragePercent.right, metrics.coveragePercent.delta],
+      ["framework", `${framework}.competenciesAdded`, "0", metrics.competenciesAdded.length, metrics.competenciesAdded.length],
+      ["framework", `${framework}.competenciesRemoved`, "0", metrics.competenciesRemoved.length, metrics.competenciesRemoved.length],
+    ]),
+    ...Object.entries(comparison.reviewChanges).map(([key, metric]) => ["review", key, metric.left, metric.right, metric.delta]),
+    ...Object.entries(comparison.dataQualityChanges).map(([key, metric]) => ["data_quality", key, metric.left, metric.right, metric.delta]),
+  ];
+  return rows.map((row) => row.map((value) => {
+    const text = String(value ?? "");
+    return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+  }).join(",")).join("\n");
+}
+
+async function programmeVersionComparisonSource(context: ActorContext, id: string) {
+  const overview = await getProgrammeOverview(context, id);
+  const modules = comparableModulesFromOverview(overview);
+  return {
+    label: `${overview.programme.code ?? "No code"} - ${overview.programme.title ?? "Untitled"} (${overview.programme.versionLabel})`,
+    modules,
+    frameworkCoverage: overview.curriculumCoverage.frameworks,
+    frameworkCompetencies: await frameworkCompetencyMarkersForProgramme(context, id, modules),
+    maturityDistribution: overview.curriculumCoverage.evidenceMaturityDistribution,
+    reviewStatus: overview.reviewStatus,
+    dataQuality: overview.dataQuality,
+  } satisfies ComparisonSource;
+}
+
+async function snapshotComparisonSource(context: ActorContext, id: string) {
+  const [snapshot] = await db
+    .select({ version: programmeMapVersionsTable, map: programmeMapsTable })
+    .from(programmeMapVersionsTable)
+    .innerJoin(programmeMapsTable, eq(programmeMapVersionsTable.programmeMapId, programmeMapsTable.id))
+    .where(and(eq(programmeMapVersionsTable.id, id), eq(programmeMapsTable.institutionId, context.institutionId)))
+    .limit(1);
+  if (!snapshot) throw new Error("Programme map snapshot not found");
+  const projection = (snapshot.version.snapshot?.["projection"] ?? {}) as Record<string, unknown>;
+  const summary = projection["summary"] && typeof projection["summary"] === "object" ? projection["summary"] as Record<string, unknown> : {};
+  return {
+    label: snapshot.version.versionLabel,
+    modules: comparableModulesFromProjection(projection),
+    frameworkCoverage: {},
+    frameworkCompetencies: emptyFrameworkCompetencies(),
+    maturityDistribution: {},
+    reviewStatus: {
+      claimsGenerated: 0,
+      claimsReviewed: 0,
+      findingsAccepted: 0,
+      findingsAmended: 0,
+      findingsRequiringClarification: 0,
+    },
+    dataQuality: {
+      missingModuleCodes: 0,
+      missingCredits: 0,
+      missingStageSemester: 0,
+      duplicatePlacementWarnings: 0,
+      modulesWithNoLearningOutcomes: 0,
+      modulesWithNoAssessments: Number(summary["missingDescriptorCount"] ?? 0),
+    },
+  } satisfies ComparisonSource;
+}
+
+async function uploadComparisonSource(context: ActorContext, id: string) {
+  const [batch] = await db
+    .select()
+    .from(importBatchesTable)
+    .where(and(eq(importBatchesTable.id, id), eq(importBatchesTable.institutionId, context.institutionId)))
+    .limit(1);
+  if (!batch) throw new Error("Upload/import batch not found");
+  const [modules, structures] = await Promise.all([
+    db.select().from(sourceModulesTable).where(and(eq(sourceModulesTable.importBatchId, id), eq(sourceModulesTable.institutionId, context.institutionId))),
+    db.select().from(sourceStructureItemsTable).where(and(eq(sourceStructureItemsTable.importBatchId, id), eq(sourceStructureItemsTable.institutionId, context.institutionId))),
+  ]);
+  const comparableModules = comparableModulesFromSourceRows(modules, structures);
+  const missingCodes = comparableModules.filter((module) => !module.moduleCode).length;
+  const missingCredits = comparableModules.filter((module) => module.credits == null).length;
+  const missingStageSemester = comparableModules.filter((module) => !module.stage || !module.semester).length;
+  return {
+    label: `${batch.batchType} upload ${batch.createdAt.toISOString().slice(0, 10)}`,
+    modules: comparableModules,
+    frameworkCoverage: {},
+    frameworkCompetencies: emptyFrameworkCompetencies(),
+    maturityDistribution: {},
+    reviewStatus: {
+      claimsGenerated: 0,
+      claimsReviewed: 0,
+      findingsAccepted: 0,
+      findingsAmended: 0,
+      findingsRequiringClarification: 0,
+    },
+    dataQuality: {
+      missingModuleCodes: missingCodes,
+      missingCredits,
+      missingStageSemester,
+      duplicatePlacementWarnings: 0,
+      modulesWithNoLearningOutcomes: 0,
+      modulesWithNoAssessments: 0,
+    },
+  } satisfies ComparisonSource;
+}
+
+export async function listProgrammeComparisonOptions(context: ActorContext) {
+  const [programmeVersions, snapshots, importBatches] = await Promise.all([
+    listProgrammeVersions(context),
+    db
+      .select({ version: programmeMapVersionsTable, map: programmeMapsTable })
+      .from(programmeMapVersionsTable)
+      .innerJoin(programmeMapsTable, eq(programmeMapVersionsTable.programmeMapId, programmeMapsTable.id))
+      .where(eq(programmeMapsTable.institutionId, context.institutionId))
+      .orderBy(desc(programmeMapVersionsTable.createdAt)),
+    db.select().from(importBatchesTable).where(eq(importBatchesTable.institutionId, context.institutionId)).orderBy(desc(importBatchesTable.createdAt)),
+  ]);
+
+  return {
+    programmeVersions,
+    snapshots: snapshots
+      .filter((row) => row.version.versionLabel !== "Workspace")
+      .map((row) => ({
+        id: row.version.id,
+        label: row.version.versionLabel,
+        programmeMapName: row.map.name,
+        createdAt: row.version.createdAt,
+      })),
+    uploads: importBatches.map((batch) => ({
+      id: batch.id,
+      label: `${batch.batchType} upload ${batch.createdAt.toISOString().slice(0, 10)}`,
+      status: batch.status,
+      createdAt: batch.createdAt,
+      summary: batch.summary,
+    })),
+  };
+}
+
+export async function compareProgrammeStates(
+  context: ActorContext,
+  input: { mode?: ProgrammeComparisonMode; leftId?: string; rightId?: string },
+) {
+  const mode = input.mode ?? "programme_version";
+  if (!input.leftId || !input.rightId) throw new Error("Both comparison targets are required");
+  const sourceFor = mode === "snapshot" ? snapshotComparisonSource : mode === "upload" ? uploadComparisonSource : programmeVersionComparisonSource;
+  const [left, right] = await Promise.all([sourceFor(context, input.leftId), sourceFor(context, input.rightId)]);
+  const curriculumChanges = compareModuleSets(left.modules, right.modules);
+  const frameworkChanges = {
+    frameworks: compareFrameworks(left.frameworkCoverage, right.frameworkCoverage, left.frameworkCompetencies, right.frameworkCompetencies),
+    maturityDistribution: compareCountRecords(left.maturityDistribution, right.maturityDistribution),
+  };
+  const reviewChanges = Object.fromEntries(Object.keys(left.reviewStatus).map((key) => [
+    key,
+    numericMetric(left.reviewStatus[key as keyof typeof left.reviewStatus], right.reviewStatus[key as keyof typeof right.reviewStatus]),
+  ]));
+  const dataQualityChanges = Object.fromEntries(Object.keys(left.dataQuality).map((key) => [
+    key,
+    numericMetric(left.dataQuality[key as keyof typeof left.dataQuality], right.dataQuality[key as keyof typeof right.dataQuality]),
+  ]));
+
+  const frameworkChangeCount = Object.values(frameworkChanges.frameworks).reduce((sum, metrics) => (
+    sum
+    + Math.abs(metrics.coveragePercent.delta)
+    + Math.abs(metrics.observedCompetencies.delta)
+    + metrics.competenciesAdded.length
+    + metrics.competenciesRemoved.length
+  ), 0);
+  const maturityChangeCount = Object.values(frameworkChanges.maturityDistribution).reduce((sum, metric) => sum + Math.abs(metric.delta), 0);
+  const reviewChangeCount = Object.values(reviewChanges).reduce((sum, metric) => sum + Math.abs(metric.delta), 0);
+  const qualityChangeCount = Object.values(dataQualityChanges).reduce((sum, metric) => sum + Math.abs(metric.delta), 0);
+
+  return {
+    mode,
+    left: { id: input.leftId, label: left.label },
+    right: { id: input.rightId, label: right.label },
+    summary: {
+      modulesAdded: curriculumChanges.modulesAdded.length,
+      modulesRemoved: curriculumChanges.modulesRemoved.length,
+      modulesMovedStage: curriculumChanges.modulesMovedStage.length,
+      modulesMovedSemester: curriculumChanges.modulesMovedSemester.length,
+      creditChanges: curriculumChanges.creditChanges.length,
+      frameworkChanges: frameworkChangeCount,
+      maturityChanges: maturityChangeCount,
+      reviewChanges: reviewChangeCount,
+      dataQualityChanges: qualityChangeCount,
+    },
+    curriculumChanges,
+    frameworkChanges,
+    reviewChanges,
+    dataQualityChanges,
+  };
+}
+
+export async function exportProgrammeComparison(
+  context: ActorContext,
+  input: { mode?: ProgrammeComparisonMode; leftId?: string; rightId?: string; format?: "json" | "csv" },
+) {
+  const comparison = await compareProgrammeStates(context, input);
+  const format = input.format === "csv" ? "csv" : "json";
+  const payload = format === "csv" ? comparisonToCsv(comparison) : JSON.stringify(comparison, null, 2);
+  return {
+    comparison,
+    filename: `cast-programme-comparison-${comparison.mode}.${format}`,
+    contentType: format === "csv" ? "text/csv" : "application/json",
+    payload,
   };
 }
 

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Archive, ArrowRight, BookOpenCheck, FileSearch, GitCompareArrows, Layers3, Library, ListChecks, Map, RefreshCw, Save, ShieldCheck } from "lucide-react";
+import { Archive, ArrowRight, BookOpenCheck, Download, FileSearch, GitCompareArrows, Layers3, Library, ListChecks, Map, RefreshCw, Save, ShieldCheck } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -94,6 +94,64 @@ type ProgrammeOverview = {
   }>;
 };
 
+type ComparisonMode = "programme_version" | "snapshot" | "upload";
+type ComparisonMetric = { left: number; right: number; delta: number };
+type ComparisonOption = { id: string; label: string; programmeMapName?: string; status?: string; createdAt?: string };
+type ComparisonOptions = {
+  programmeVersions: ProgrammeVersion[];
+  snapshots: ComparisonOption[];
+  uploads: ComparisonOption[];
+};
+type ComparedModule = {
+  moduleId?: string | null;
+  moduleCode?: string | null;
+  moduleTitle?: string | null;
+  stage?: string | null;
+  semester?: string | null;
+  credits?: number | null;
+};
+type ComparedCompetency = {
+  id: string;
+  key: string;
+  name: string;
+  frameworkKey: string;
+};
+type ProgrammeComparison = {
+  mode: ComparisonMode;
+  left: { id: string; label: string };
+  right: { id: string; label: string };
+  summary: {
+    modulesAdded: number;
+    modulesRemoved: number;
+    modulesMovedStage: number;
+    modulesMovedSemester: number;
+    creditChanges: number;
+    frameworkChanges: number;
+    maturityChanges: number;
+    reviewChanges: number;
+    dataQualityChanges: number;
+  };
+  curriculumChanges: {
+    modulesAdded: ComparedModule[];
+    modulesRemoved: ComparedModule[];
+    modulesMovedStage: Array<{ before: ComparedModule; after: ComparedModule }>;
+    modulesMovedSemester: Array<{ before: ComparedModule; after: ComparedModule }>;
+    creditChanges: Array<{ before: ComparedModule; after: ComparedModule; delta: number }>;
+  };
+  frameworkChanges: {
+    frameworks: Record<string, {
+      observedCompetencies: ComparisonMetric;
+      coveragePercent: ComparisonMetric;
+      totalCompetencies: ComparisonMetric;
+      competenciesAdded: ComparedCompetency[];
+      competenciesRemoved: ComparedCompetency[];
+    }>;
+    maturityDistribution: Record<string, ComparisonMetric>;
+  };
+  reviewChanges: Record<string, ComparisonMetric>;
+  dataQualityChanges: Record<string, ComparisonMetric>;
+};
+
 async function api<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     credentials: "include",
@@ -130,6 +188,21 @@ function maturityLabel(key: string) {
   return labels[key] ?? key;
 }
 
+function metricTone(delta: number) {
+  if (delta < 0) return "text-emerald-700";
+  if (delta > 0) return "text-amber-700";
+  return "text-slate-600";
+}
+
+function formatDelta(delta: number) {
+  if (delta > 0) return `+${delta}`;
+  return String(delta);
+}
+
+function moduleName(module: ComparedModule) {
+  return `${module.moduleCode ?? "No code"} - ${module.moduleTitle ?? "Untitled module"}`;
+}
+
 export default function ProgrammeWorkspace() {
   const [state, setState] = useState<WorkspaceState>({ loading: false });
   const [sourceProgrammes, setSourceProgrammes] = useState<SourceProgramme[]>([]);
@@ -144,6 +217,11 @@ export default function ProgrammeWorkspace() {
   const [quality, setQuality] = useState<unknown>(null);
   const [preview, setPreview] = useState<{ rows?: Array<Record<string, unknown>> } | null>(null);
   const [overview, setOverview] = useState<ProgrammeOverview | null>(null);
+  const [comparisonOptions, setComparisonOptions] = useState<ComparisonOptions>({ programmeVersions: [], snapshots: [], uploads: [] });
+  const [comparisonMode, setComparisonMode] = useState<ComparisonMode>("programme_version");
+  const [comparisonLeftId, setComparisonLeftId] = useState("");
+  const [comparisonRightId, setComparisonRightId] = useState("");
+  const [programmeComparison, setProgrammeComparison] = useState<ProgrammeComparison | null>(null);
   const [confirmArchive, setConfirmArchive] = useState(false);
 
   const selectedProgramme = useMemo(
@@ -170,6 +248,7 @@ export default function ProgrammeWorkspace() {
 
   useEffect(() => {
     void load();
+    void loadComparisonOptions();
   }, []);
 
   useEffect(() => {
@@ -219,6 +298,13 @@ export default function ProgrammeWorkspace() {
     setOverview(await api<ProgrammeOverview>(`/api/programme-workspace/programme-versions/${selectedProgrammeId}/overview`));
   }
 
+  async function loadComparisonOptions() {
+    const options = await api<ComparisonOptions>("/api/programme-workspace/comparison-options");
+    setComparisonOptions(options);
+    setComparisonLeftId((current) => current || options.programmeVersions[1]?.id || options.programmeVersions[0]?.id || "");
+    setComparisonRightId((current) => current || options.programmeVersions[0]?.id || "");
+  }
+
   async function updateItem(item: StructureItem, patch: Partial<StructureItem>) {
     const result = await api<{ item: StructureItem }>(`/api/programme-workspace/structure-items/${item.id}`, {
       method: "PATCH",
@@ -230,6 +316,46 @@ export default function ProgrammeWorkspace() {
   async function loadComparison() {
     if (!selectedProgrammeId) return;
     setComparison(await api(`/api/programme-workspace/programme-versions/${selectedProgrammeId}/source-comparison`));
+  }
+
+  function optionsForMode(mode = comparisonMode): ComparisonOption[] {
+    if (mode === "snapshot") return comparisonOptions.snapshots;
+    if (mode === "upload") return comparisonOptions.uploads;
+    return comparisonOptions.programmeVersions.map((programme) => ({
+      id: programme.id,
+      label: `${programme.programmeCode ?? "No code"} - ${programme.programmeName ?? "Untitled"} (${programme.versionLabel})`,
+    }));
+  }
+
+  function updateComparisonMode(mode: ComparisonMode) {
+    const options = optionsForMode(mode);
+    setComparisonMode(mode);
+    setComparisonLeftId(options[1]?.id || options[0]?.id || "");
+    setComparisonRightId(options[0]?.id || "");
+    setProgrammeComparison(null);
+  }
+
+  async function runProgrammeComparison() {
+    if (!comparisonLeftId || !comparisonRightId) return;
+    setProgrammeComparison(await api<ProgrammeComparison>("/api/programme-workspace/comparisons", {
+      method: "POST",
+      body: JSON.stringify({ mode: comparisonMode, leftId: comparisonLeftId, rightId: comparisonRightId }),
+    }));
+  }
+
+  async function exportProgrammeComparison(format: "json" | "csv") {
+    if (!comparisonLeftId || !comparisonRightId) return;
+    const result = await api<{ filename: string; contentType: string; payload: string }>("/api/programme-workspace/comparisons/export", {
+      method: "POST",
+      body: JSON.stringify({ mode: comparisonMode, leftId: comparisonLeftId, rightId: comparisonRightId, format }),
+    });
+    const blob = new Blob([result.payload], { type: result.contentType });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = result.filename;
+    anchor.click();
+    URL.revokeObjectURL(url);
   }
 
   async function runQuality() {
@@ -536,13 +662,182 @@ export default function ProgrammeWorkspace() {
         </TabsContent>
 
         <TabsContent value="comparison">
-          <Card>
-            <CardHeader><CardTitle>Source Versus Curated</CardTitle></CardHeader>
-            <CardContent className="space-y-3">
-              <Button variant="outline" onClick={loadComparison} disabled={!selectedProgrammeId}><GitCompareArrows className="mr-2 h-4 w-4" />Load comparison</Button>
-              <pre className="max-h-96 overflow-auto rounded bg-slate-950 p-4 text-xs text-slate-100">{comparison ? JSON.stringify(comparison, null, 2) : "No comparison loaded."}</pre>
-            </CardContent>
-          </Card>
+          <div className="space-y-4">
+            <Card>
+              <CardHeader><CardTitle>Programme Comparison</CardTitle></CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid gap-3 lg:grid-cols-[180px_1fr_1fr_auto]">
+                  <Select value={comparisonMode} onValueChange={(value) => updateComparisonMode(value as ComparisonMode)}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="programme_version">Programme versions</SelectItem>
+                      <SelectItem value="snapshot">Map snapshots</SelectItem>
+                      <SelectItem value="upload">Uploads</SelectItem>
+                    </SelectContent>
+                  </Select>
+                  <Select value={comparisonLeftId} onValueChange={setComparisonLeftId}>
+                    <SelectTrigger><SelectValue placeholder="Compare from" /></SelectTrigger>
+                    <SelectContent>
+                      {optionsForMode().map((option) => <SelectItem key={option.id} value={option.id}>{option.label}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  <Select value={comparisonRightId} onValueChange={setComparisonRightId}>
+                    <SelectTrigger><SelectValue placeholder="Compare to" /></SelectTrigger>
+                    <SelectContent>
+                      {optionsForMode().map((option) => <SelectItem key={option.id} value={option.id}>{option.label}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                  <Button onClick={runProgrammeComparison} disabled={!comparisonLeftId || !comparisonRightId || comparisonLeftId === comparisonRightId}>
+                    <GitCompareArrows className="mr-2 h-4 w-4" />
+                    Compare
+                  </Button>
+                </div>
+                {programmeComparison && (
+                  <div className="flex flex-wrap gap-2">
+                    <Button variant="outline" onClick={() => exportProgrammeComparison("json")}><Download className="mr-2 h-4 w-4" />JSON</Button>
+                    <Button variant="outline" onClick={() => exportProgrammeComparison("csv")}><Download className="mr-2 h-4 w-4" />CSV</Button>
+                  </div>
+                )}
+                {optionsForMode().length < 2 && (
+                  <div className="rounded border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                    At least two {comparisonMode === "programme_version" ? "programme versions" : comparisonMode === "snapshot" ? "snapshots" : "uploads"} are needed for this comparison.
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {programmeComparison && (
+              <>
+                <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+                  {[
+                    ["Modules added", programmeComparison.summary.modulesAdded],
+                    ["Modules removed", programmeComparison.summary.modulesRemoved],
+                    ["Framework changes", programmeComparison.summary.frameworkChanges],
+                    ["Maturity changes", programmeComparison.summary.maturityChanges],
+                    ["Review changes", programmeComparison.summary.reviewChanges],
+                    ["Data quality changes", programmeComparison.summary.dataQualityChanges],
+                  ].map(([label, value]) => (
+                    <Card key={label}><CardContent className="p-4"><div className="text-2xl font-semibold text-slate-950">{value}</div><div className="text-xs text-slate-500">{label}</div></CardContent></Card>
+                  ))}
+                </div>
+
+                <Card>
+                  <CardHeader><CardTitle>Curriculum Changes</CardTitle></CardHeader>
+                  <CardContent className="grid gap-4 lg:grid-cols-2">
+                    <div>
+                      <h3 className="mb-2 text-sm font-semibold text-slate-950">Modules added</h3>
+                      <div className="space-y-2">
+                        {programmeComparison.curriculumChanges.modulesAdded.length === 0 && <p className="text-sm text-slate-500">No added modules.</p>}
+                        {programmeComparison.curriculumChanges.modulesAdded.map((module) => (
+                          <div key={module.moduleId ?? module.moduleCode ?? moduleName(module)} className="rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-900">
+                            {moduleName(module)}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <h3 className="mb-2 text-sm font-semibold text-slate-950">Modules removed</h3>
+                      <div className="space-y-2">
+                        {programmeComparison.curriculumChanges.modulesRemoved.length === 0 && <p className="text-sm text-slate-500">No removed modules.</p>}
+                        {programmeComparison.curriculumChanges.modulesRemoved.map((module) => (
+                          <div key={module.moduleId ?? module.moduleCode ?? moduleName(module)} className="rounded border border-rose-200 bg-rose-50 px-3 py-2 text-sm text-rose-900">
+                            {moduleName(module)}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <h3 className="mb-2 text-sm font-semibold text-slate-950">Stage or semester moves</h3>
+                      <div className="space-y-2">
+                        {[...programmeComparison.curriculumChanges.modulesMovedStage, ...programmeComparison.curriculumChanges.modulesMovedSemester].length === 0 && <p className="text-sm text-slate-500">No placement moves.</p>}
+                        {[...programmeComparison.curriculumChanges.modulesMovedStage, ...programmeComparison.curriculumChanges.modulesMovedSemester].map((move, index) => (
+                          <div key={`${move.after.moduleId ?? move.after.moduleCode ?? index}-move`} className="rounded border border-slate-200 px-3 py-2 text-sm">
+                            <div className="font-medium text-slate-950">{moduleName(move.after)}</div>
+                            <div className="text-slate-500">Stage {move.before.stage ?? "-"} / Semester {move.before.semester ?? "-"} to Stage {move.after.stage ?? "-"} / Semester {move.after.semester ?? "-"}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <h3 className="mb-2 text-sm font-semibold text-slate-950">Credit changes</h3>
+                      <div className="space-y-2">
+                        {programmeComparison.curriculumChanges.creditChanges.length === 0 && <p className="text-sm text-slate-500">No credit changes.</p>}
+                        {programmeComparison.curriculumChanges.creditChanges.map((change, index) => (
+                          <div key={`${change.after.moduleId ?? change.after.moduleCode ?? index}-credits`} className="rounded border border-slate-200 px-3 py-2 text-sm">
+                            <div className="font-medium text-slate-950">{moduleName(change.after)}</div>
+                            <div className="text-slate-500">{change.before.credits ?? "-"} to {change.after.credits ?? "-"} credits ({formatDelta(change.delta)})</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <div className="grid gap-4 xl:grid-cols-3">
+                  <Card>
+                    <CardHeader><CardTitle>Framework Changes</CardTitle></CardHeader>
+                    <CardContent className="space-y-3">
+                      {Object.entries(programmeComparison.frameworkChanges.frameworks).map(([key, metrics]) => (
+                        <div key={key} className="rounded border border-slate-200 p-3">
+                          <div className="font-medium text-slate-950">{frameworkLabel(key)}</div>
+                          <div className="mt-1 flex justify-between text-sm"><span>Observed competences</span><span className={metricTone(metrics.observedCompetencies.delta)}>{metrics.observedCompetencies.right} ({formatDelta(metrics.observedCompetencies.delta)})</span></div>
+                          <div className="flex justify-between text-sm"><span>Coverage</span><span className={metricTone(metrics.coveragePercent.delta)}>{metrics.coveragePercent.right}% ({formatDelta(metrics.coveragePercent.delta)})</span></div>
+                          <div className="mt-2 grid gap-2 text-xs text-slate-600">
+                            <div>
+                              <span className="font-medium text-emerald-700">Added:</span>{" "}
+                              {metrics.competenciesAdded.length === 0
+                                ? "None"
+                                : metrics.competenciesAdded.slice(0, 3).map((competency) => competency.key).join(", ")}
+                              {metrics.competenciesAdded.length > 3 ? ` +${metrics.competenciesAdded.length - 3} more` : ""}
+                            </div>
+                            <div>
+                              <span className="font-medium text-rose-700">Removed:</span>{" "}
+                              {metrics.competenciesRemoved.length === 0
+                                ? "None"
+                                : metrics.competenciesRemoved.slice(0, 3).map((competency) => competency.key).join(", ")}
+                              {metrics.competenciesRemoved.length > 3 ? ` +${metrics.competenciesRemoved.length - 3} more` : ""}
+                            </div>
+                          </div>
+                        </div>
+                      ))}
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader><CardTitle>Review Changes</CardTitle></CardHeader>
+                    <CardContent className="space-y-2">
+                      {Object.entries(programmeComparison.reviewChanges).map(([key, metric]) => (
+                        <div key={key} className="flex justify-between rounded border border-slate-200 px-3 py-2 text-sm">
+                          <span>{key.replace(/([A-Z])/g, " $1")}</span>
+                          <span className={metricTone(metric.delta)}>{metric.right} ({formatDelta(metric.delta)})</span>
+                        </div>
+                      ))}
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader><CardTitle>Data Quality Changes</CardTitle></CardHeader>
+                    <CardContent className="space-y-2">
+                      {Object.entries(programmeComparison.dataQualityChanges).map(([key, metric]) => (
+                        <div key={key} className="flex justify-between rounded border border-slate-200 px-3 py-2 text-sm">
+                          <span>{key.replace(/([A-Z])/g, " $1")}</span>
+                          <span className={metricTone(metric.delta)}>{metric.right} ({formatDelta(metric.delta)})</span>
+                        </div>
+                      ))}
+                    </CardContent>
+                  </Card>
+                </div>
+              </>
+            )}
+
+            <Card>
+              <CardHeader><CardTitle>Source Versus Curated Diagnostic</CardTitle></CardHeader>
+              <CardContent className="space-y-3">
+                <Button variant="outline" onClick={loadComparison} disabled={!selectedProgrammeId}><GitCompareArrows className="mr-2 h-4 w-4" />Load source diagnostic</Button>
+                <pre className="max-h-96 overflow-auto rounded bg-slate-950 p-4 text-xs text-slate-100">{comparison ? JSON.stringify(comparison, null, 2) : "No source diagnostic loaded."}</pre>
+              </CardContent>
+            </Card>
+          </div>
         </TabsContent>
 
         <TabsContent value="quality">

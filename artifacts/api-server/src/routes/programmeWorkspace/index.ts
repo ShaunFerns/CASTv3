@@ -9,10 +9,13 @@ import {
 } from "../../lib/requestContext.js";
 import {
   buildInitialCuratedStructure,
+  compareProgrammeStates,
   createProgrammeVersionFromSource,
+  exportProgrammeComparison,
   getCuratedStructure,
   getProgrammeOverview,
   getProgrammeVersion,
+  listProgrammeComparisonOptions,
   listProgrammeVersions,
   listSourceProgrammes,
   mapPreview,
@@ -101,6 +104,47 @@ router.get(
   requirePermission("programme.read"),
   async (req, res): Promise<void> => {
     res.json(await getProgrammeOverview(context(req), idParam(req, "programmeVersionId")));
+  },
+);
+
+router.get(
+  "/programme-workspace/comparison-options",
+  ...protectedWorkspace,
+  requirePermission("programme.read"),
+  async (req, res): Promise<void> => {
+    res.json(await listProgrammeComparisonOptions(context(req)));
+  },
+);
+
+router.post(
+  "/programme-workspace/comparisons",
+  ...protectedWorkspace,
+  requirePermission("programme.read"),
+  async (req, res): Promise<void> => {
+    res.json(await compareProgrammeStates(context(req), req.body));
+  },
+);
+
+router.post(
+  "/programme-workspace/comparisons/export",
+  ...protectedWorkspace,
+  requirePermission("programme.read"),
+  async (req, res): Promise<void> => {
+    const result = await exportProgrammeComparison(context(req), req.body);
+    await writeRequestAuditEvent({
+      req,
+      actionType: "programme_workspace.comparison_exported",
+      subjectType: "programme_version",
+      subjectId: req.body?.rightId ?? req.body?.leftId,
+      metadata: {
+        mode: req.body?.mode,
+        format: req.body?.format ?? "json",
+        leftId: req.body?.leftId,
+        rightId: req.body?.rightId,
+        inlineExport: true,
+      },
+    });
+    res.status(201).json(result);
   },
 );
 
