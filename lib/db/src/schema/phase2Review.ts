@@ -38,8 +38,9 @@ import {
 import { frameworkVersionsTable } from "./phase2Frameworks";
 import { lensVersionsTable } from "./phase2Lenses";
 import { institutionPriorityVersionsTable } from "./phase2Priorities";
-import { programmeMapsTable } from "./phase2ProgrammeMaps";
+import { programmeMapCellsTable, programmeMapsTable } from "./phase2ProgrammeMaps";
 import { institutionsTable } from "./phase2Tenancy";
+import { modulesTable } from "./phase2Curriculum";
 
 export const reviewCyclesTable = pgTable(
   "review_cycles",
@@ -135,6 +136,105 @@ export const reviewAssignmentsTable = pgTable(
     ),
     index("review_assignments_membership_idx").on(table.membershipId),
     index("review_assignments_role_status_idx").on(table.role, table.status),
+  ],
+);
+
+export const reviewCycleParticipantsTable = pgTable(
+  "review_cycle_participants",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    reviewCycleId: uuid("review_cycle_id")
+      .notNull()
+      .references(() => reviewCyclesTable.id, { onDelete: "cascade" }),
+    institutionId: uuid("institution_id")
+      .notNull()
+      .references(() => institutionsTable.id, { onDelete: "cascade" }),
+    name: text("name").notNull(),
+    role: text("role").notNull(),
+    status: text("status").notNull().default("active"),
+    comments: text("comments"),
+    metadata: jsonb("metadata")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    createdByUserId: uuid("created_by_user_id").references(
+      () => usersTable.id,
+      { onDelete: "set null" },
+    ),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (table) => [
+    index("review_cycle_participants_cycle_idx").on(table.reviewCycleId),
+    index("review_cycle_participants_institution_idx").on(table.institutionId),
+    index("review_cycle_participants_role_status_idx").on(table.role, table.status),
+  ],
+);
+
+export const reviewNotesTable = pgTable(
+  "review_notes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    institutionId: uuid("institution_id")
+      .notNull()
+      .references(() => institutionsTable.id, { onDelete: "cascade" }),
+    reviewCycleId: uuid("review_cycle_id")
+      .notNull()
+      .references(() => reviewCyclesTable.id, { onDelete: "cascade" }),
+    programmeVersionId: uuid("programme_version_id").references(
+      () => programmeVersionsTable.id,
+      { onDelete: "set null" },
+    ),
+    moduleId: uuid("module_id").references(() => modulesTable.id, {
+      onDelete: "set null",
+    }),
+    aiClaimId: uuid("ai_claim_id").references(() => aiClaimsTable.id, {
+      onDelete: "set null",
+    }),
+    humanReviewId: uuid("human_review_id").references(() => humanReviewsTable.id, {
+      onDelete: "set null",
+    }),
+    programmeMapId: uuid("programme_map_id").references(() => programmeMapsTable.id, {
+      onDelete: "set null",
+    }),
+    programmeMapCellId: uuid("programme_map_cell_id").references(() => programmeMapCellsTable.id, {
+      onDelete: "set null",
+    }),
+    noteType: text("note_type").notNull().default("observation"),
+    title: text("title"),
+    body: text("body").notNull(),
+    visibility: text("visibility").notNull().default("review_team"),
+    metadata: jsonb("metadata")
+      .$type<Record<string, unknown>>()
+      .notNull()
+      .default({}),
+    createdByUserId: uuid("created_by_user_id").references(
+      () => usersTable.id,
+      { onDelete: "set null" },
+    ),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow()
+      .$onUpdate(() => new Date()),
+  },
+  (table) => [
+    index("review_notes_institution_idx").on(table.institutionId),
+    index("review_notes_cycle_idx").on(table.reviewCycleId),
+    index("review_notes_programme_idx").on(table.programmeVersionId),
+    index("review_notes_module_idx").on(table.moduleId),
+    index("review_notes_claim_idx").on(table.aiClaimId),
+    index("review_notes_human_review_idx").on(table.humanReviewId),
+    index("review_notes_map_idx").on(table.programmeMapId),
+    index("review_notes_map_cell_idx").on(table.programmeMapCellId),
+    index("review_notes_type_idx").on(table.noteType),
   ],
 );
 
@@ -848,6 +948,12 @@ export type ReviewCycle = typeof reviewCyclesTable.$inferSelect;
 export type InsertReviewCycle = typeof reviewCyclesTable.$inferInsert;
 export type ReviewAssignment = typeof reviewAssignmentsTable.$inferSelect;
 export type InsertReviewAssignment = typeof reviewAssignmentsTable.$inferInsert;
+export type ReviewCycleParticipant =
+  typeof reviewCycleParticipantsTable.$inferSelect;
+export type InsertReviewCycleParticipant =
+  typeof reviewCycleParticipantsTable.$inferInsert;
+export type ReviewNote = typeof reviewNotesTable.$inferSelect;
+export type InsertReviewNote = typeof reviewNotesTable.$inferInsert;
 export type ReadinessAssessment = typeof readinessAssessmentsTable.$inferSelect;
 export type InsertReadinessAssessment =
   typeof readinessAssessmentsTable.$inferInsert;

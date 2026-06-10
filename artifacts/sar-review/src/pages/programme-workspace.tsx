@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Archive, ArrowRight, BookOpenCheck, Download, FileSearch, GitCompareArrows, Layers3, Library, ListChecks, Map, RefreshCw, Save, ShieldCheck } from "lucide-react";
+import { Archive, ArrowRight, BookOpenCheck, ClipboardCheck, Download, FileSearch, Gauge, GitCompareArrows, Layers3, Library, ListChecks, Map, NotebookPen, RefreshCw, Save, ShieldCheck, Users } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -152,6 +152,76 @@ type ProgrammeComparison = {
   dataQualityChanges: Record<string, ComparisonMetric>;
 };
 
+type ReviewCycle = {
+  id: string;
+  programmeVersionId?: string | null;
+  title: string;
+  cycleType: string;
+  typeLabel?: string;
+  status: string;
+  description?: string | null;
+  plannedStartAt?: string | null;
+  plannedEndAt?: string | null;
+  participantCount?: number;
+  noteCount?: number;
+  readinessAssessmentCount?: number;
+};
+
+type ReviewParticipant = {
+  id: string;
+  name: string;
+  role: string;
+  status: string;
+  comments?: string | null;
+};
+
+type ReviewNote = {
+  id: string;
+  noteType: string;
+  title?: string | null;
+  body: string;
+  createdAt?: string | null;
+};
+
+type ReadinessArea = {
+  key: string;
+  title: string;
+  rating: string;
+  statusLabel: string;
+  strengths: string[];
+  gaps: string[];
+  observations: string[];
+  evidenceReferences: Array<{ type: string; label: string; count?: number }>;
+  metrics: Record<string, number>;
+};
+
+type ReadinessSummary = {
+  programme: ProgrammeOverview["programme"];
+  generatedAt: string;
+  overallRating: string;
+  overallStatusLabel: string;
+  areas: ReadinessArea[];
+  note: string;
+};
+
+type ReadinessAssessment = {
+  id: string;
+  title: string;
+  status: string;
+  overallRating?: string | null;
+  createdAt?: string | null;
+};
+
+type ReadinessAssessmentItem = {
+  id: string;
+  readinessAssessmentId: string;
+  criterionKey: string;
+  title: string;
+  finding?: string | null;
+  rating: string;
+  status: string;
+};
+
 async function api<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     credentials: "include",
@@ -203,6 +273,32 @@ function moduleName(module: ComparedModule) {
   return `${module.moduleCode ?? "No code"} - ${module.moduleTitle ?? "Untitled module"}`;
 }
 
+function statusLabel(value: string) {
+  const labels: Record<string, string> = {
+    draft: "Draft",
+    active: "Active",
+    completed: "Review Complete",
+    archived: "Closed",
+    cancelled: "Cancelled",
+    planned: "Draft",
+    not_assessed: "Not Started",
+    emerging: "Emerging",
+    developing: "Developing",
+    established: "Established",
+  };
+  return labels[value] ?? value.replace(/_/g, " ");
+}
+
+function savePayload(filename: string, contentType: string, payload: string) {
+  const blob = new Blob([payload], { type: contentType });
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  anchor.click();
+  URL.revokeObjectURL(url);
+}
+
 export default function ProgrammeWorkspace() {
   const [state, setState] = useState<WorkspaceState>({ loading: false });
   const [sourceProgrammes, setSourceProgrammes] = useState<SourceProgramme[]>([]);
@@ -223,6 +319,26 @@ export default function ProgrammeWorkspace() {
   const [comparisonRightId, setComparisonRightId] = useState("");
   const [programmeComparison, setProgrammeComparison] = useState<ProgrammeComparison | null>(null);
   const [confirmArchive, setConfirmArchive] = useState(false);
+  const [reviewCycles, setReviewCycles] = useState<ReviewCycle[]>([]);
+  const [selectedReviewCycleId, setSelectedReviewCycleId] = useState("");
+  const [reviewCycleDetail, setReviewCycleDetail] = useState<{
+    reviewCycle: ReviewCycle;
+    participants: ReviewParticipant[];
+    notes: ReviewNote[];
+    readinessAssessments: ReadinessAssessment[];
+  } | null>(null);
+  const [readinessSummary, setReadinessSummary] = useState<ReadinessSummary | null>(null);
+  const [readinessAssessments, setReadinessAssessments] = useState<ReadinessAssessment[]>([]);
+  const [readinessItems, setReadinessItems] = useState<ReadinessAssessmentItem[]>([]);
+  const [reviewForm, setReviewForm] = useState({
+    title: "Annual Programme Review",
+    cycleType: "programme_review",
+    description: "",
+    startDate: "",
+    targetCompletionDate: "",
+  });
+  const [participantForm, setParticipantForm] = useState({ name: "", role: "Programme Chair", comments: "" });
+  const [noteForm, setNoteForm] = useState({ title: "", noteType: "observation", body: "" });
 
   const selectedProgramme = useMemo(
     () => programmeVersions.find((programme) => programme.id === selectedProgrammeId),
@@ -254,9 +370,17 @@ export default function ProgrammeWorkspace() {
   useEffect(() => {
     if (!selectedProgrammeId) {
       setOverview(null);
+      setReviewCycles([]);
+      setSelectedReviewCycleId("");
+      setReviewCycleDetail(null);
+      setReadinessSummary(null);
+      setReadinessAssessments([]);
+      setReadinessItems([]);
       return;
     }
     void loadOverview();
+    void loadReviewCycles();
+    void loadReadiness();
   }, [selectedProgrammeId]);
 
   async function createProgramme() {
@@ -349,13 +473,121 @@ export default function ProgrammeWorkspace() {
       method: "POST",
       body: JSON.stringify({ mode: comparisonMode, leftId: comparisonLeftId, rightId: comparisonRightId, format }),
     });
-    const blob = new Blob([result.payload], { type: result.contentType });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = result.filename;
-    anchor.click();
-    URL.revokeObjectURL(url);
+    savePayload(result.filename, result.contentType, result.payload);
+  }
+
+  async function loadReviewCycles() {
+    if (!selectedProgrammeId) return;
+    const result = await api<{ reviewCycles: ReviewCycle[] }>(`/api/programme-workspace/programme-versions/${selectedProgrammeId}/review-cycles`);
+    setReviewCycles(result.reviewCycles);
+    setSelectedReviewCycleId((current) => current || result.reviewCycles[0]?.id || "");
+    if (!result.reviewCycles.some((cycle) => cycle.id === selectedReviewCycleId)) {
+      setReviewCycleDetail(null);
+    }
+  }
+
+  async function loadReviewCycleDetail(reviewCycleId = selectedReviewCycleId) {
+    if (!reviewCycleId) return;
+    const result = await api<{
+      reviewCycle: ReviewCycle;
+      participants: ReviewParticipant[];
+      notes: ReviewNote[];
+      readinessAssessments: ReadinessAssessment[];
+    }>(`/api/programme-workspace/review-cycles/${reviewCycleId}`);
+    setReviewCycleDetail(result);
+    setSelectedReviewCycleId(result.reviewCycle.id);
+  }
+
+  async function createReviewCycle() {
+    if (!selectedProgrammeId) return;
+    setState({ loading: true });
+    try {
+      const result = await api<{ reviewCycle: ReviewCycle }>("/api/programme-workspace/review-cycles", {
+        method: "POST",
+        body: JSON.stringify({ ...reviewForm, programmeVersionId: selectedProgrammeId }),
+      });
+      setReviewCycles((current) => [result.reviewCycle, ...current]);
+      setSelectedReviewCycleId(result.reviewCycle.id);
+      setReviewCycleDetail({ reviewCycle: result.reviewCycle, participants: [], notes: [], readinessAssessments: [] });
+      setState({ loading: false, message: "Review cycle created." });
+    } catch (error) {
+      setState({ loading: false, error: error instanceof Error ? error.message : "Review cycle creation failed" });
+    }
+  }
+
+  async function updateReviewStatus(status: "draft" | "active" | "completed" | "archived") {
+    if (!selectedReviewCycleId) return;
+    const result = await api<{ reviewCycle: ReviewCycle }>(`/api/programme-workspace/review-cycles/${selectedReviewCycleId}`, {
+      method: "PATCH",
+      body: JSON.stringify({ status }),
+    });
+    setReviewCycles((current) => current.map((cycle) => cycle.id === result.reviewCycle.id ? { ...cycle, ...result.reviewCycle } : cycle));
+    await loadReviewCycleDetail(result.reviewCycle.id);
+  }
+
+  async function addParticipant() {
+    if (!selectedReviewCycleId || !participantForm.name.trim()) return;
+    const result = await api<{ participant: ReviewParticipant }>(`/api/programme-workspace/review-cycles/${selectedReviewCycleId}/participants`, {
+      method: "POST",
+      body: JSON.stringify(participantForm),
+    });
+    setReviewCycleDetail((current) => current ? { ...current, participants: [...current.participants, result.participant] } : current);
+    setParticipantForm({ name: "", role: "Programme Chair", comments: "" });
+    await loadReviewCycles();
+  }
+
+  async function addReviewNote() {
+    if (!selectedReviewCycleId || !noteForm.body.trim()) return;
+    const result = await api<{ note: ReviewNote }>(`/api/programme-workspace/review-cycles/${selectedReviewCycleId}/notes`, {
+      method: "POST",
+      body: JSON.stringify({ ...noteForm, programmeVersionId: selectedProgrammeId }),
+    });
+    setReviewCycleDetail((current) => current ? { ...current, notes: [result.note, ...current.notes] } : current);
+    setNoteForm({ title: "", noteType: "observation", body: "" });
+    await loadReviewCycles();
+  }
+
+  async function loadReadiness() {
+    if (!selectedProgrammeId) return;
+    const result = await api<{
+      summary: ReadinessSummary;
+      readinessAssessments: ReadinessAssessment[];
+      items: ReadinessAssessmentItem[];
+    }>(`/api/programme-workspace/programme-versions/${selectedProgrammeId}/readiness`);
+    setReadinessSummary(result.summary);
+    setReadinessAssessments(result.readinessAssessments);
+    setReadinessItems(result.items);
+  }
+
+  async function createReadinessAssessment() {
+    if (!selectedReviewCycleId) return;
+    const result = await api<{
+      readinessAssessment: ReadinessAssessment;
+      items: ReadinessAssessmentItem[];
+      summary: ReadinessSummary;
+    }>(`/api/programme-workspace/review-cycles/${selectedReviewCycleId}/readiness-assessments`, { method: "POST" });
+    setReadinessSummary(result.summary);
+    await loadReadiness();
+    await loadReviewCycleDetail(selectedReviewCycleId);
+    setState({ loading: false, message: "Readiness assessment captured for the review cycle." });
+  }
+
+  async function exportReviewCycle(format: "json" | "csv") {
+    if (!selectedReviewCycleId) return;
+    const result = await api<{ filename: string; contentType: string; payload: string }>(`/api/programme-workspace/review-cycles/${selectedReviewCycleId}/export`, {
+      method: "POST",
+      body: JSON.stringify({ format }),
+    });
+    savePayload(result.filename, result.contentType, result.payload);
+  }
+
+  async function exportReadiness(format: "json" | "csv") {
+    if (!selectedReviewCycleId) return;
+    const result = await api<{ filename: string; contentType: string; payload: string }>(`/api/programme-workspace/review-cycles/${selectedReviewCycleId}/readiness/export`, {
+      method: "POST",
+      body: JSON.stringify({ format }),
+    });
+    savePayload(result.filename, result.contentType, result.payload);
   }
 
   async function runQuality() {
@@ -386,7 +618,7 @@ export default function ProgrammeWorkspace() {
       <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight" style={{ color: "#003865" }}>Programme Workspace</h1>
-          <p className="mt-2 max-w-3xl text-sm text-slate-600">Create curated programme versions from ingested source data and prepare structures for maps.</p>
+          <p className="mt-2 max-w-3xl text-sm text-slate-600">Create curated programme versions from uploaded source data and prepare structures for maps and review.</p>
         </div>
         <Button variant="outline" onClick={load} disabled={state.loading}><RefreshCw className="mr-2 h-4 w-4" />Refresh</Button>
       </div>
@@ -447,6 +679,8 @@ export default function ProgrammeWorkspace() {
           <TabsTrigger value="overview"><BookOpenCheck className="mr-2 h-4 w-4" />Overview</TabsTrigger>
           <TabsTrigger value="structure"><Layers3 className="mr-2 h-4 w-4" />Structure</TabsTrigger>
           <TabsTrigger value="comparison"><GitCompareArrows className="mr-2 h-4 w-4" />Comparison</TabsTrigger>
+          <TabsTrigger value="review-cycles"><ClipboardCheck className="mr-2 h-4 w-4" />Review Cycles</TabsTrigger>
+          <TabsTrigger value="readiness"><Gauge className="mr-2 h-4 w-4" />Readiness</TabsTrigger>
           <TabsTrigger value="quality"><ListChecks className="mr-2 h-4 w-4" />Quality</TabsTrigger>
           <TabsTrigger value="map"><Map className="mr-2 h-4 w-4" />Map preview</TabsTrigger>
         </TabsList>
@@ -835,6 +1069,319 @@ export default function ProgrammeWorkspace() {
               <CardContent className="space-y-3">
                 <Button variant="outline" onClick={loadComparison} disabled={!selectedProgrammeId}><GitCompareArrows className="mr-2 h-4 w-4" />Load source diagnostic</Button>
                 <pre className="max-h-96 overflow-auto rounded bg-slate-950 p-4 text-xs text-slate-100">{comparison ? JSON.stringify(comparison, null, 2) : "No source diagnostic loaded."}</pre>
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="review-cycles">
+          <div className="grid gap-4 xl:grid-cols-[420px_1fr]">
+            <Card>
+              <CardHeader>
+                <CardTitle>Create Review Cycle</CardTitle>
+                <p className="text-sm text-slate-600">Set up a structured review activity for the selected programme. This records the review context; it does not make a readiness judgement.</p>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="space-y-2">
+                  <Label>Review title</Label>
+                  <Input value={reviewForm.title} onChange={(event) => setReviewForm((current) => ({ ...current, title: event.target.value }))} />
+                </div>
+                <div className="space-y-2">
+                  <Label>Review type</Label>
+                  <Select value={reviewForm.cycleType} onValueChange={(cycleType) => setReviewForm((current) => ({ ...current, cycleType }))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="programme_review">Programme Review</SelectItem>
+                      <SelectItem value="validation">Validation</SelectItem>
+                      <SelectItem value="revalidation">Revalidation</SelectItem>
+                      <SelectItem value="accreditation">Accreditation</SelectItem>
+                      <SelectItem value="delta_readiness">DELTA Readiness</SelectItem>
+                      <SelectItem value="institutional_priority_review">Institutional Priority Review</SelectItem>
+                      <SelectItem value="other">Internal Enhancement Review</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="space-y-2">
+                    <Label>Start date</Label>
+                    <Input type="date" value={reviewForm.startDate} onChange={(event) => setReviewForm((current) => ({ ...current, startDate: event.target.value }))} />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Target completion</Label>
+                    <Input type="date" value={reviewForm.targetCompletionDate} onChange={(event) => setReviewForm((current) => ({ ...current, targetCompletionDate: event.target.value }))} />
+                  </div>
+                </div>
+                <div className="space-y-2">
+                  <Label>Description</Label>
+                  <textarea
+                    className="min-h-24 w-full rounded-md border border-slate-200 px-3 py-2 text-sm shadow-sm outline-none focus:border-blue-500"
+                    value={reviewForm.description}
+                    onChange={(event) => setReviewForm((current) => ({ ...current, description: event.target.value }))}
+                    placeholder="Purpose, review scope, evidence focus or external context"
+                  />
+                </div>
+                <Button onClick={createReviewCycle} disabled={!selectedProgrammeId || state.loading}>
+                  <ClipboardCheck className="mr-2 h-4 w-4" />
+                  Create review cycle
+                </Button>
+              </CardContent>
+            </Card>
+
+            <div className="space-y-4">
+              <Card>
+                <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <CardTitle>Review Cycles</CardTitle>
+                    <p className="mt-1 text-sm text-slate-600">Programme reviews, validation activities, accreditation reviews and enhancement-focused evidence discussions.</p>
+                  </div>
+                  <Button variant="outline" onClick={loadReviewCycles} disabled={!selectedProgrammeId}>
+                    <RefreshCw className="mr-2 h-4 w-4" />
+                    Refresh
+                  </Button>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  {reviewCycles.length === 0 && <p className="text-sm text-slate-500">No review cycles have been created for this programme yet.</p>}
+                  {reviewCycles.map((cycle) => (
+                    <div key={cycle.id} className="grid gap-3 rounded border border-slate-200 p-3 lg:grid-cols-[1fr_auto]">
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className="font-semibold text-slate-950">{cycle.title}</h3>
+                          <Badge variant="outline">{cycle.typeLabel ?? cycle.cycleType}</Badge>
+                          <Badge variant={cycle.status === "active" ? "secondary" : "outline"}>{statusLabel(cycle.status)}</Badge>
+                        </div>
+                        <p className="mt-1 text-sm text-slate-600">{cycle.description || "No description recorded."}</p>
+                        <div className="mt-2 flex flex-wrap gap-3 text-xs text-slate-500">
+                          <span>Start: {formatDate(cycle.plannedStartAt)}</span>
+                          <span>Target: {formatDate(cycle.plannedEndAt)}</span>
+                          <span>{cycle.participantCount ?? 0} participants</span>
+                          <span>{cycle.noteCount ?? 0} notes</span>
+                          <span>{cycle.readinessAssessmentCount ?? 0} readiness summaries</span>
+                        </div>
+                      </div>
+                      <Button variant="outline" onClick={() => loadReviewCycleDetail(cycle.id)}>Open</Button>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+
+              {reviewCycleDetail && (
+                <Card>
+                  <CardHeader className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                    <div>
+                      <CardTitle>{reviewCycleDetail.reviewCycle.title}</CardTitle>
+                      <p className="mt-1 text-sm text-slate-600">Use this space to capture review-team participation, observations and evidence-informed notes.</p>
+                    </div>
+                    <div className="flex flex-wrap gap-2">
+                      <Button variant="outline" onClick={() => updateReviewStatus("active")}>Mark active</Button>
+                      <Button variant="outline" onClick={() => updateReviewStatus("completed")}>Review complete</Button>
+                      <Button variant="outline" onClick={() => updateReviewStatus("archived")}>Close</Button>
+                    </div>
+                  </CardHeader>
+                  <CardContent className="space-y-5">
+                    <div className="flex flex-wrap gap-2">
+                      <Button variant="outline" onClick={() => exportReviewCycle("json")}><Download className="mr-2 h-4 w-4" />Export JSON</Button>
+                      <Button variant="outline" onClick={() => exportReviewCycle("csv")}><Download className="mr-2 h-4 w-4" />Export CSV</Button>
+                      <Button onClick={createReadinessAssessment}><Gauge className="mr-2 h-4 w-4" />Capture readiness summary</Button>
+                    </div>
+
+                    <div className="grid gap-4 lg:grid-cols-2">
+                      <div className="rounded border border-slate-200 p-4">
+                        <h3 className="flex items-center font-semibold text-slate-950"><Users className="mr-2 h-4 w-4 text-blue-700" />Participants</h3>
+                        <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_170px]">
+                          <Input value={participantForm.name} onChange={(event) => setParticipantForm((current) => ({ ...current, name: event.target.value }))} placeholder="Name" />
+                          <Select value={participantForm.role} onValueChange={(role) => setParticipantForm((current) => ({ ...current, role }))}>
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="Programme Chair">Programme Chair</SelectItem>
+                              <SelectItem value="Reviewer">Reviewer</SelectItem>
+                              <SelectItem value="External Reviewer">External Reviewer</SelectItem>
+                              <SelectItem value="Quality Representative">Quality Representative</SelectItem>
+                              <SelectItem value="DELTA Team Member">DELTA Team Member</SelectItem>
+                              <SelectItem value="Contributor">Contributor</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <Input className="mt-2" value={participantForm.comments} onChange={(event) => setParticipantForm((current) => ({ ...current, comments: event.target.value }))} placeholder="Comments or contribution focus" />
+                        <Button className="mt-3" variant="outline" onClick={addParticipant} disabled={!participantForm.name.trim()}>Add participant</Button>
+                        <div className="mt-4 space-y-2">
+                          {reviewCycleDetail.participants.length === 0 && <p className="text-sm text-slate-500">No participants recorded.</p>}
+                          {reviewCycleDetail.participants.map((participant) => (
+                            <div key={participant.id} className="rounded bg-slate-50 px-3 py-2 text-sm">
+                              <div className="font-medium text-slate-950">{participant.name}</div>
+                              <div className="text-slate-600">{participant.role}{participant.comments ? ` - ${participant.comments}` : ""}</div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+
+                      <div className="rounded border border-slate-200 p-4">
+                        <h3 className="flex items-center font-semibold text-slate-950"><NotebookPen className="mr-2 h-4 w-4 text-blue-700" />Review Notes</h3>
+                        <div className="mt-3 grid gap-2 sm:grid-cols-[1fr_160px]">
+                          <Input value={noteForm.title} onChange={(event) => setNoteForm((current) => ({ ...current, title: event.target.value }))} placeholder="Optional note title" />
+                          <Select value={noteForm.noteType} onValueChange={(noteType) => setNoteForm((current) => ({ ...current, noteType }))}>
+                            <SelectTrigger><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="observation">Observation</SelectItem>
+                              <SelectItem value="comment">Comment</SelectItem>
+                              <SelectItem value="finding_link">Linked finding</SelectItem>
+                              <SelectItem value="evidence_note">Evidence note</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                        <textarea
+                          className="mt-2 min-h-24 w-full rounded-md border border-slate-200 px-3 py-2 text-sm shadow-sm outline-none focus:border-blue-500"
+                          value={noteForm.body}
+                          onChange={(event) => setNoteForm((current) => ({ ...current, body: event.target.value }))}
+                          placeholder="Record review observations, evidence questions or enhancement discussion points"
+                        />
+                        <Button className="mt-3" variant="outline" onClick={addReviewNote} disabled={!noteForm.body.trim()}>Add note</Button>
+                        <div className="mt-4 space-y-2">
+                          {reviewCycleDetail.notes.length === 0 && <p className="text-sm text-slate-500">No notes recorded.</p>}
+                          {reviewCycleDetail.notes.map((note) => (
+                            <div key={note.id} className="rounded bg-slate-50 px-3 py-2 text-sm">
+                              <div className="flex flex-wrap items-center gap-2">
+                                <span className="font-medium text-slate-950">{note.title || "Review note"}</span>
+                                <Badge variant="outline">{note.noteType.replace(/_/g, " ")}</Badge>
+                              </div>
+                              <p className="mt-1 text-slate-600">{note.body}</p>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              )}
+            </div>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="readiness">
+          <div className="space-y-4">
+            <Card>
+              <CardHeader className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <CardTitle>Evidence-Informed Readiness</CardTitle>
+                  <p className="mt-1 max-w-3xl text-sm text-slate-600">
+                    Readiness brings together existing programme structure, framework coverage, assessment evidence, data quality and human-reviewed findings. It supports review-team judgement; it is not an institutional decision.
+                  </p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button variant="outline" onClick={loadReadiness} disabled={!selectedProgrammeId}><RefreshCw className="mr-2 h-4 w-4" />Refresh</Button>
+                  <Button onClick={createReadinessAssessment} disabled={!selectedReviewCycleId}><Gauge className="mr-2 h-4 w-4" />Capture summary</Button>
+                </div>
+              </CardHeader>
+              <CardContent>
+                {!readinessSummary && <p className="text-sm text-slate-500">Select a programme and refresh readiness to view current indicators.</p>}
+                {readinessSummary && (
+                  <div className="space-y-4">
+                    <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+                      <div className="rounded border border-slate-200 bg-white p-4">
+                        <div className="text-xs font-medium uppercase tracking-wide text-slate-500">Overall indicator</div>
+                        <div className="mt-2 text-xl font-semibold text-slate-950">{readinessSummary.overallStatusLabel}</div>
+                      </div>
+                      {readinessSummary.areas.map((item) => (
+                        <div key={item.key} className="rounded border border-slate-200 bg-white p-4">
+                          <div className="text-xs font-medium uppercase tracking-wide text-slate-500">{item.title}</div>
+                          <div className="mt-2 text-lg font-semibold text-slate-950">{item.statusLabel}</div>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="rounded border border-blue-100 bg-blue-50 px-4 py-3 text-sm text-blue-950">{readinessSummary.note}</div>
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {readinessSummary && (
+              <div className="grid gap-4 lg:grid-cols-2">
+                {readinessSummary.areas.map((item) => (
+                  <Card key={item.key}>
+                    <CardHeader>
+                      <CardTitle className="flex items-center justify-between gap-3">
+                        <span>{item.title}</span>
+                        <Badge variant="outline">{item.statusLabel}</Badge>
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="space-y-4">
+                      <div>
+                        <h3 className="text-sm font-semibold text-emerald-800">Strengths</h3>
+                        <ul className="mt-2 space-y-1 text-sm text-slate-700">
+                          {(item.strengths.length ? item.strengths : ["No explicit strengths have been surfaced yet."]).map((text) => <li key={text}>{text}</li>)}
+                        </ul>
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-semibold text-amber-800">Gaps</h3>
+                        <ul className="mt-2 space-y-1 text-sm text-slate-700">
+                          {(item.gaps.length ? item.gaps : ["No current gaps are visible for this area."]).map((text) => <li key={text}>{text}</li>)}
+                        </ul>
+                      </div>
+                      <div>
+                        <h3 className="text-sm font-semibold text-slate-950">Observations</h3>
+                        <ul className="mt-2 space-y-1 text-sm text-slate-700">
+                          {item.observations.map((text) => <li key={text}>{text}</li>)}
+                        </ul>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        {item.evidenceReferences.map((reference) => (
+                          <Badge key={`${item.key}-${reference.type}`} variant="secondary">{reference.label}: {reference.count ?? 0}</Badge>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+            )}
+
+            <Card>
+              <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <CardTitle>Captured Readiness Summaries</CardTitle>
+                  <p className="mt-1 text-sm text-slate-600">Snapshots captured against review cycles for later review evidence packs.</p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button variant="outline" onClick={() => exportReadiness("json")} disabled={!selectedReviewCycleId}><Download className="mr-2 h-4 w-4" />JSON</Button>
+                  <Button variant="outline" onClick={() => exportReadiness("csv")} disabled={!selectedReviewCycleId}><Download className="mr-2 h-4 w-4" />CSV</Button>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {reviewCycles.length > 0 && (
+                  <div className="max-w-xl">
+                    <Label>Review cycle for capture/export</Label>
+                    <Select value={selectedReviewCycleId} onValueChange={(value) => {
+                      setSelectedReviewCycleId(value);
+                      void loadReviewCycleDetail(value);
+                    }}>
+                      <SelectTrigger><SelectValue placeholder="Select review cycle" /></SelectTrigger>
+                      <SelectContent>
+                        {reviewCycles.map((cycle) => <SelectItem key={cycle.id} value={cycle.id}>{cycle.title}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
+                {readinessAssessments.length === 0 && <p className="text-sm text-slate-500">No readiness summaries have been captured for this programme yet.</p>}
+                {readinessAssessments.map((assessment) => {
+                  const itemsForAssessment = readinessItems.filter((item) => item.readinessAssessmentId === assessment.id);
+                  return (
+                    <div key={assessment.id} className="rounded border border-slate-200 p-3">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <div className="font-semibold text-slate-950">{assessment.title}</div>
+                          <div className="text-xs text-slate-500">Captured {formatDate(assessment.createdAt)}</div>
+                        </div>
+                        <Badge variant="outline">{statusLabel(assessment.overallRating ?? "not_assessed")}</Badge>
+                      </div>
+                      <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-5">
+                        {itemsForAssessment.map((item) => (
+                          <div key={item.id} className="rounded bg-slate-50 px-3 py-2 text-sm">
+                            <div className="font-medium text-slate-950">{item.title}</div>
+                            <div className="text-slate-600">{statusLabel(item.rating)}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
               </CardContent>
             </Card>
           </div>
