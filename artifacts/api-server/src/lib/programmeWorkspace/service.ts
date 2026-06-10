@@ -1,5 +1,9 @@
-import { and, asc, eq, inArray } from "drizzle-orm";
+import { and, asc, eq, inArray, or } from "drizzle-orm";
 import {
+  aiClaimsTable,
+  assessmentComponentsTable,
+  competencyEvaluationsTable,
+  competenciesTable,
   curatedStructureGroupsTable,
   curatedStructureItemsTable,
   curatedStructuresTable,
@@ -8,6 +12,12 @@ import {
   dataQualityRulesTable,
   dataQualityRunsTable,
   db,
+  evidenceItemsTable,
+  frameworkVersionsTable,
+  frameworksTable,
+  humanReviewsTable,
+  importBatchesTable,
+  learningOutcomesTable,
   moduleDescriptorsTable,
   modulesTable,
   programmeVersionsTable,
@@ -24,6 +34,10 @@ type ActorContext = {
 
 type SourceStructureItemRow = typeof sourceStructureItemsTable.$inferSelect;
 type CuratedStructureItemRow = typeof curatedStructureItemsTable.$inferSelect;
+type ModuleRow = typeof modulesTable.$inferSelect;
+type ModuleDescriptorRow = typeof moduleDescriptorsTable.$inferSelect;
+type AiClaimRow = typeof aiClaimsTable.$inferSelect;
+type HumanReviewRow = typeof humanReviewsTable.$inferSelect;
 
 type QualityIssue = {
   key: string;
@@ -152,6 +166,51 @@ function itemSourceStructureIds(item: CuratedStructureItemRow): string[] {
     ? item.metadata["sourceStructureItemIds"].filter((id): id is string => typeof id === "string")
     : [];
   return [...new Set([item.sourceStructureItemId, ...sourceIds].filter((id): id is string => Boolean(id)))];
+}
+
+function uniqueStrings(values: Array<string | null | undefined>): string[] {
+  return [...new Set(values.map((value) => value?.trim()).filter((value): value is string => Boolean(value)))];
+}
+
+function latestDate(dates: Array<Date | null | undefined>): string | null {
+  const timestamps = dates.map((date) => date?.getTime()).filter((value): value is number => typeof value === "number" && Number.isFinite(value));
+  if (timestamps.length === 0) return null;
+  return new Date(Math.max(...timestamps)).toISOString();
+}
+
+function incrementCounter(map: Map<string, number>, key: string | null | undefined, amount = 1) {
+  if (!key) return;
+  map.set(key, (map.get(key) ?? 0) + amount);
+}
+
+function maturityDistribution() {
+  return { none: 0, developing: 0, consolidating: 0, leading: 0 };
+}
+
+function latestReviewsByClaim(reviews: HumanReviewRow[]): Map<string, HumanReviewRow> {
+  const byClaim = new Map<string, HumanReviewRow>();
+  for (const review of [...reviews].sort((a, b) => (b.createdAt?.getTime() ?? 0) - (a.createdAt?.getTime() ?? 0))) {
+    if (!review.aiClaimId || byClaim.has(review.aiClaimId)) continue;
+    byClaim.set(review.aiClaimId, review);
+  }
+  return byClaim;
+}
+
+function reviewStatusForClaims(claims: AiClaimRow[], latestReviews: Map<string, HumanReviewRow>): string {
+  if (claims.length === 0) return "No claims";
+  const latest = claims.map((claim) => latestReviews.get(claim.id)).filter((review): review is HumanReviewRow => Boolean(review));
+  if (latest.length === 0) return "Not reviewed";
+  if (latest.some((review) => review.decision === "request_clarification")) return "Clarification required";
+  if (latest.some((review) => review.decision === "amend")) return "Amended finding";
+  if (latest.some((review) => review.decision === "accept")) return "Accepted finding";
+  return "Reviewed";
+}
+
+function moduleDisplay(module: ModuleRow | undefined, fallback?: CuratedStructureItemRow) {
+  return {
+    code: module?.moduleCode ?? null,
+    title: module?.moduleTitle ?? fallback?.label ?? null,
+  };
 }
 
 async function ensureProgrammeQualityRules() {
@@ -892,6 +951,239 @@ export async function runProgrammeQualityChecks(context: ActorContext, programme
   }
 
   return { qualityRun, results };
+}
+
+export async function getProgrammeOverview(context: ActorContext, programmeVersionId: string) {
+  const structureData = await getCuratedStructure(context, programmeVersionId);
+  const items = structureData.items as CuratedStructureItemRow[];
+  const moduleIds = [...new Set(items.map((item) => item.moduleId).filter((id): id is string => Boolean(id)))];
+  const sourceStructureIds = [...new Set(items.flatMap((item) => itemSourceStructureIds(item)))];
+  const sourceModuleIds = [...new Set(items.map((item) => item.sourceModuleId).filter((id): id is string => Boolean(id)))];
+
+  const [modules, descriptors, sourceStructures, sourceModules] = await Promise.all([
+    moduleIds.length
+      ? db.select().from(modulesTable).where(and(eq(modulesTable.institutionId, context.institutionId), inArray(modulesTable.id, moduleIds)))
+      : Promise.resolve([]),
+    moduleIds.length
+      ? db.select().from(moduleDescriptorsTable).where(and(eq(moduleDescriptorsTable.institutionId, context.institutionId), inArray(moduleDescriptorsTable.moduleId, moduleIds)))
+      : Promise.resolve([]),
+    sourceStructureIds.length
+      ? db.select().from(sourceStructureItemsTable).where(and(eq(sourceStructureItemsTable.institutionId, context.institutionId), inArray(sourceStructureItemsTable.id, sourceStructureIds)))
+      : Promise.resolve([]),
+    sourceModuleIds.length
+      ? db.select().from(sourceModulesTable).where(and(eq(sourceModulesTable.institutionId, context.institutionId), inArray(sourceModulesTable.id, sourceModuleIds)))
+      : Promise.resolve([]),
+  ]);
+
+  const descriptorRows = descriptors as ModuleDescriptorRow[];
+  const descriptorIds = descriptorRows.map((descriptor) => descriptor.id);
+  const moduleById = new Map((modules as ModuleRow[]).map((module) => [module.id, module]));
+  const descriptorsByModule = new Map<string, ModuleDescriptorRow[]>();
+  const descriptorToModule = new Map<string, string>();
+  for (const descriptor of descriptorRows) {
+    descriptorsByModule.set(descriptor.moduleId, [...(descriptorsByModule.get(descriptor.moduleId) ?? []), descriptor]);
+    descriptorToModule.set(descriptor.id, descriptor.moduleId);
+  }
+
+  const importBatchIds = [
+    ...new Set([
+      ...sourceStructures.map((source) => source.importBatchId),
+      ...sourceModules.map((source) => source.importBatchId),
+    ].filter((id): id is string => Boolean(id))),
+  ];
+  const importBatches = importBatchIds.length
+    ? await db.select().from(importBatchesTable).where(and(eq(importBatchesTable.institutionId, context.institutionId), inArray(importBatchesTable.id, importBatchIds)))
+    : [];
+
+  const [evidenceRows, learningOutcomeRows, assessmentRows, evaluationRows, claimRows] = await Promise.all([
+    moduleIds.length
+      ? db.select().from(evidenceItemsTable).where(and(eq(evidenceItemsTable.institutionId, context.institutionId), inArray(evidenceItemsTable.moduleId, moduleIds)))
+      : Promise.resolve([]),
+    descriptorIds.length
+      ? db.select().from(learningOutcomesTable).where(and(eq(learningOutcomesTable.institutionId, context.institutionId), inArray(learningOutcomesTable.moduleDescriptorId, descriptorIds)))
+      : Promise.resolve([]),
+    descriptorIds.length
+      ? db.select().from(assessmentComponentsTable).where(and(eq(assessmentComponentsTable.institutionId, context.institutionId), inArray(assessmentComponentsTable.moduleDescriptorId, descriptorIds)))
+      : Promise.resolve([]),
+    moduleIds.length
+      ? db
+          .select({
+            evaluation: competencyEvaluationsTable,
+            competency: competenciesTable,
+            frameworkVersion: frameworkVersionsTable,
+            framework: frameworksTable,
+          })
+          .from(competencyEvaluationsTable)
+          .leftJoin(competenciesTable, eq(competencyEvaluationsTable.competencyId, competenciesTable.id))
+          .leftJoin(frameworkVersionsTable, eq(competenciesTable.frameworkVersionId, frameworkVersionsTable.id))
+          .leftJoin(frameworksTable, eq(frameworkVersionsTable.frameworkId, frameworksTable.id))
+          .where(and(
+            eq(competencyEvaluationsTable.institutionId, context.institutionId),
+            or(eq(competencyEvaluationsTable.programmeVersionId, programmeVersionId), inArray(competencyEvaluationsTable.moduleId, moduleIds)),
+          ))
+      : db
+          .select({
+            evaluation: competencyEvaluationsTable,
+            competency: competenciesTable,
+            frameworkVersion: frameworkVersionsTable,
+            framework: frameworksTable,
+          })
+          .from(competencyEvaluationsTable)
+          .leftJoin(competenciesTable, eq(competencyEvaluationsTable.competencyId, competenciesTable.id))
+          .leftJoin(frameworkVersionsTable, eq(competenciesTable.frameworkVersionId, frameworkVersionsTable.id))
+          .leftJoin(frameworksTable, eq(frameworkVersionsTable.frameworkId, frameworksTable.id))
+          .where(and(eq(competencyEvaluationsTable.institutionId, context.institutionId), eq(competencyEvaluationsTable.programmeVersionId, programmeVersionId))),
+    moduleIds.length
+      ? db.select().from(aiClaimsTable).where(and(eq(aiClaimsTable.institutionId, context.institutionId), or(eq(aiClaimsTable.programmeVersionId, programmeVersionId), inArray(aiClaimsTable.moduleId, moduleIds))))
+      : db.select().from(aiClaimsTable).where(and(eq(aiClaimsTable.institutionId, context.institutionId), eq(aiClaimsTable.programmeVersionId, programmeVersionId))),
+  ]);
+
+  const claimIds = claimRows.map((claim) => claim.id);
+  const reviewRows = claimIds.length
+    ? await db.select().from(humanReviewsTable).where(and(eq(humanReviewsTable.institutionId, context.institutionId), inArray(humanReviewsTable.aiClaimId, claimIds)))
+    : [];
+  const latestReviewByClaim = latestReviewsByClaim(reviewRows);
+
+  const evidenceByModule = new Map<string, number>();
+  for (const evidence of evidenceRows) incrementCounter(evidenceByModule, evidence.moduleId);
+
+  const outcomesByModule = new Map<string, number>();
+  for (const outcome of learningOutcomeRows) incrementCounter(outcomesByModule, descriptorToModule.get(outcome.moduleDescriptorId));
+
+  const assessmentsByModule = new Map<string, number>();
+  for (const assessment of assessmentRows) incrementCounter(assessmentsByModule, descriptorToModule.get(assessment.moduleDescriptorId));
+
+  const claimsByModule = new Map<string, AiClaimRow[]>();
+  for (const claim of claimRows) {
+    if (!claim.moduleId) continue;
+    claimsByModule.set(claim.moduleId, [...(claimsByModule.get(claim.moduleId) ?? []), claim]);
+  }
+
+  const frameworkKeys = ["greencomp", "lifecomp", "entrecomp", "digcomp"] as const;
+  const frameworkVersionRows = await db
+    .select({ framework: frameworksTable, version: frameworkVersionsTable })
+    .from(frameworksTable)
+    .innerJoin(frameworkVersionsTable, eq(frameworkVersionsTable.frameworkId, frameworksTable.id))
+    .where(inArray(frameworksTable.key, [...frameworkKeys]));
+  const frameworkVersionIds = frameworkVersionRows.map((row) => row.version.id);
+  const competencyRows = frameworkVersionIds.length
+    ? await db.select().from(competenciesTable).where(inArray(competenciesTable.frameworkVersionId, frameworkVersionIds))
+    : [];
+
+  const totalCompetenciesByFramework = new Map<string, number>();
+  const frameworkKeyByVersion = new Map(frameworkVersionRows.map((row) => [row.version.id, row.framework.key]));
+  for (const competency of competencyRows) {
+    incrementCounter(totalCompetenciesByFramework, frameworkKeyByVersion.get(competency.frameworkVersionId));
+  }
+
+  const observedCompetenciesByFramework = new Map<string, Set<string>>();
+  const maturity = maturityDistribution();
+  for (const row of evaluationRows) {
+    const frameworkKey = row.framework?.key;
+    const competencyId = row.evaluation.competencyId;
+    if (frameworkKey && competencyId) {
+      const set = observedCompetenciesByFramework.get(frameworkKey) ?? new Set<string>();
+      set.add(competencyId);
+      observedCompetenciesByFramework.set(frameworkKey, set);
+    }
+    const observedLevel = row.evaluation.observedLevel as keyof ReturnType<typeof maturityDistribution>;
+    if (observedLevel in maturity) maturity[observedLevel] += 1;
+  }
+
+  const frameworkCoverage = Object.fromEntries(frameworkKeys.map((key) => {
+    const totalCompetencies = totalCompetenciesByFramework.get(key) ?? 0;
+    const observedCompetencies = observedCompetenciesByFramework.get(key)?.size ?? 0;
+    return [key, {
+      totalCompetencies,
+      observedCompetencies,
+      coveragePercent: totalCompetencies > 0 ? Math.round((observedCompetencies / totalCompetencies) * 100) : 0,
+    }];
+  }));
+
+  const latestReviews = [...latestReviewByClaim.values()];
+  const dataQuality = {
+    missingModuleCodes: moduleIds.filter((moduleId) => !moduleById.get(moduleId)?.moduleCode).length + items.filter((item) => !item.moduleId && !item.sourceModuleId).length,
+    missingCredits: items.filter((item) => item.credits == null && (!item.moduleId || moduleById.get(item.moduleId)?.defaultCredits == null)).length,
+    missingStageSemester: items.filter((item) => !item.stage || !item.semester).length,
+    duplicatePlacementWarnings: 0,
+    modulesWithNoLearningOutcomes: moduleIds.filter((moduleId) => (outcomesByModule.get(moduleId) ?? 0) === 0).length,
+    modulesWithNoAssessments: moduleIds.filter((moduleId) => (assessmentsByModule.get(moduleId) ?? 0) === 0).length,
+  };
+
+  const placementsByKey = new Map<string, CuratedStructureItemRow[]>();
+  for (const item of items) {
+    const key = itemPlacementSemanticKey(item);
+    placementsByKey.set(key, [...(placementsByKey.get(key) ?? []), item]);
+  }
+  for (const duplicateGroup of placementsByKey.values()) {
+    if (duplicateGroup.length > 1) dataQuality.duplicatePlacementWarnings += duplicateGroup.length - 1;
+  }
+
+  const itemQualityByModule = new Map<string, number>();
+  for (const item of items) {
+    if (!item.moduleId) continue;
+    let issueCount = 0;
+    if (!item.stage || !item.semester) issueCount += 1;
+    if (item.credits == null && moduleById.get(item.moduleId)?.defaultCredits == null) issueCount += 1;
+    itemQualityByModule.set(item.moduleId, (itemQualityByModule.get(item.moduleId) ?? 0) + issueCount);
+  }
+  for (const duplicateGroup of placementsByKey.values()) {
+    if (duplicateGroup.length <= 1) continue;
+    for (const item of duplicateGroup.slice(1)) {
+      if (item.moduleId) itemQualityByModule.set(item.moduleId, (itemQualityByModule.get(item.moduleId) ?? 0) + 1);
+    }
+  }
+
+  const moduleStatusRows = moduleIds.map((moduleId) => {
+    const module = moduleById.get(moduleId);
+    const fallbackItem = items.find((item) => item.moduleId === moduleId);
+    const display = moduleDisplay(module, fallbackItem);
+    const claimCount = claimsByModule.get(moduleId)?.length ?? 0;
+    const noOutcomes = (outcomesByModule.get(moduleId) ?? 0) === 0;
+    const noAssessments = (assessmentsByModule.get(moduleId) ?? 0) === 0;
+    const qualityCount = (itemQualityByModule.get(moduleId) ?? 0)
+      + (!display.code ? 1 : 0)
+      + (noOutcomes ? 1 : 0)
+      + (noAssessments ? 1 : 0);
+    return {
+      moduleId,
+      moduleCode: display.code,
+      moduleTitle: display.title,
+      evidenceCount: evidenceByModule.get(moduleId) ?? 0,
+      claimCount,
+      reviewStatus: reviewStatusForClaims(claimsByModule.get(moduleId) ?? [], latestReviewByClaim),
+      dataQualityStatus: qualityCount > 0 ? `${qualityCount} issue${qualityCount === 1 ? "" : "s"}` : "No issues",
+    };
+  });
+
+  return {
+    programme: {
+      id: structureData.programme.id,
+      title: structureData.programme.programmeName,
+      code: structureData.programme.programmeCode,
+      versionLabel: structureData.programme.versionLabel,
+      academicYear: structureData.programme.academicYear,
+    },
+    summary: {
+      moduleCount: moduleIds.length,
+      stageCount: uniqueStrings(items.map((item) => item.stage)).length,
+      semesterCount: uniqueStrings(items.map((item) => item.semester)).length,
+      lastUploadDate: latestDate(importBatches.map((batch) => batch.completedAt ?? batch.createdAt)),
+    },
+    curriculumCoverage: {
+      frameworks: frameworkCoverage,
+      evidenceMaturityDistribution: maturity,
+    },
+    reviewStatus: {
+      claimsGenerated: claimRows.length,
+      claimsReviewed: latestReviews.length,
+      findingsAccepted: latestReviews.filter((review) => review.decision === "accept").length,
+      findingsAmended: latestReviews.filter((review) => review.decision === "amend").length,
+      findingsRequiringClarification: latestReviews.filter((review) => review.decision === "request_clarification").length,
+    },
+    dataQuality,
+    modules: moduleStatusRows.sort((a, b) => `${a.moduleCode ?? ""}${a.moduleTitle ?? ""}`.localeCompare(`${b.moduleCode ?? ""}${b.moduleTitle ?? ""}`)),
+  };
 }
 
 export async function mapPreview(context: ActorContext, programmeVersionId: string) {

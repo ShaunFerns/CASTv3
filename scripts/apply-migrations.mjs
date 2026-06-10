@@ -9,8 +9,8 @@ const requireFromDb = createRequire(new URL("../lib/db/package.json", import.met
 
 const migrationsDir = path.resolve(fileURLToPath(new URL("../lib/db/migrations", import.meta.url)));
 const dryRun = process.argv.includes("--dry-run") || process.env.CAST_MIGRATIONS_DRY_RUN === "true";
-const migrationIdPattern = /^(?:000[1-9]|0010)_.*\.sql$/;
-const expectedMigrationIds = new Set(["0001", "0002", "0003", "0004", "0005", "0006", "0007", "0008", "0009", "0010"]);
+const migrationIdPattern = /^(?:000[1-9]|001[0-1])_.*\.sql$/;
+const expectedMigrationIds = new Set(["0001", "0002", "0003", "0004", "0005", "0006", "0007", "0008", "0009", "0010", "0011"]);
 
 const requiredObjectsByMigration = {
   "0001": {
@@ -52,6 +52,10 @@ const requiredObjectsByMigration = {
   "0010": {
     tables: ["priority_expectations", "programme_attribute_expectations", "programme_competency_expectations", "competency_evaluations", "ai_claims", "descriptor_improvement_suggestions"],
     types: ["evidence_maturity_level"],
+  },
+  "0011": {
+    tables: ["institutions", "users", "app_sessions", "modules", "evidence_items", "audit_events", "cast_schema_migrations"],
+    publicTablesHaveRls: true,
   },
 };
 
@@ -137,6 +141,20 @@ async function columnExists(client, tableName, columnName) {
   return result.rows[0]?.exists === true;
 }
 
+async function allPublicTablesHaveRls(client) {
+  const result = await client.query(`
+    select not exists (
+      select 1
+      from pg_class c
+      join pg_namespace n on n.oid = c.relnamespace
+      where n.nspname = 'public'
+        and c.relkind in ('r', 'p')
+        and not c.relrowsecurity
+    ) as ok
+  `);
+  return result.rows[0]?.ok === true;
+}
+
 async function migrationObjectsAlreadyExist(client, migrationId) {
   const required = requiredObjectsByMigration[migrationId];
   if (!required) return false;
@@ -152,6 +170,8 @@ async function migrationObjectsAlreadyExist(client, migrationId) {
   for (const column of required.columns ?? []) {
     if (!(await columnExists(client, column.table, column.column))) return false;
   }
+
+  if (required.publicTablesHaveRls && !(await allPublicTablesHaveRls(client))) return false;
 
   return true;
 }

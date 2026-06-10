@@ -10,7 +10,7 @@ Do not provision Render PostgreSQL for the approved CAST v3 deployment path.
 Browser -> Render web service -> CAST API -> Supabase PostgreSQL
 ```
 
-The browser must not directly mutate CAST v3 tables. Supabase Auth and broad RLS are not implemented in this deployment phase.
+The browser must not directly read or mutate CAST v3 tables. Migration `0011_rls_hardening_public_tables.sql` enables RLS on public CAST tables and revokes broad `anon`/`authenticated` table access so Supabase Data API access remains closed while the CAST API remains the application boundary.
 
 ## Render Blueprint
 
@@ -96,6 +96,8 @@ Do not add Supabase service-role keys or database passwords to the frontend. `NE
 - `0007_phase2g_data_quality_local_workers.sql`
 - `0008_phase3b_identity_sessions_roles.sql`
 - `0009_phase4a_curriculum_ingestion.sql`
+- `0010_evidence_maturity_terminology.sql`
+- `0011_rls_hardening_public_tables.sql`
 
 The runner creates `cast_schema_migrations` and records each migration with:
 
@@ -109,6 +111,8 @@ The runner creates `cast_schema_migrations` and records each migration with:
 If the existing Supabase database already contains all expected objects for a migration but the ledger has not yet been created, the runner records the migration as `baselined`. This supports the already-validated Supabase database without re-running duplicate DDL.
 
 If a recorded migration checksum changes, the runner stops.
+
+Migration `0011` is intentionally policy-light: it enables RLS without adding broad client policies. CAST v3 currently uses the backend database connection for all application access, so direct Supabase browser access should remain unavailable until a future Supabase Auth/OIDC and tenant-aware RLS phase is implemented.
 
 `0090_legacy_compatibility_views.sql` is not run by default. It is optional and should only be used in prototype migration environments where the legacy tables exist.
 

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
-import { Archive, GitCompareArrows, Layers3, ListChecks, Map, RefreshCw, Save } from "lucide-react";
+import { Archive, ArrowRight, BookOpenCheck, FileSearch, GitCompareArrows, Layers3, Library, ListChecks, Map, RefreshCw, Save, ShieldCheck } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -49,6 +50,50 @@ type WorkspaceState = {
   message?: string;
 };
 
+type ProgrammeOverview = {
+  programme: {
+    id: string;
+    title?: string | null;
+    code?: string | null;
+    versionLabel: string;
+    academicYear?: string | null;
+  };
+  summary: {
+    moduleCount: number;
+    stageCount: number;
+    semesterCount: number;
+    lastUploadDate?: string | null;
+  };
+  curriculumCoverage: {
+    frameworks: Record<string, { totalCompetencies: number; observedCompetencies: number; coveragePercent: number }>;
+    evidenceMaturityDistribution: Record<"none" | "developing" | "consolidating" | "leading", number>;
+  };
+  reviewStatus: {
+    claimsGenerated: number;
+    claimsReviewed: number;
+    findingsAccepted: number;
+    findingsAmended: number;
+    findingsRequiringClarification: number;
+  };
+  dataQuality: {
+    missingModuleCodes: number;
+    missingCredits: number;
+    missingStageSemester: number;
+    duplicatePlacementWarnings: number;
+    modulesWithNoLearningOutcomes: number;
+    modulesWithNoAssessments: number;
+  };
+  modules: Array<{
+    moduleId: string;
+    moduleCode?: string | null;
+    moduleTitle?: string | null;
+    evidenceCount: number;
+    claimCount: number;
+    reviewStatus: string;
+    dataQualityStatus: string;
+  }>;
+};
+
 async function api<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     credentials: "include",
@@ -58,6 +103,31 @@ async function api<T>(path: string, options?: RequestInit): Promise<T> {
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) throw new Error(payload.message ?? payload.error ?? `Request failed with ${response.status}`);
   return payload as T;
+}
+
+function formatDate(value?: string | null) {
+  if (!value) return "Not available";
+  return new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric" }).format(new Date(value));
+}
+
+function frameworkLabel(key: string) {
+  const labels: Record<string, string> = {
+    greencomp: "GreenComp",
+    lifecomp: "LifeComp",
+    entrecomp: "EntreComp",
+    digcomp: "DigComp",
+  };
+  return labels[key] ?? key;
+}
+
+function maturityLabel(key: string) {
+  const labels: Record<string, string> = {
+    none: "None",
+    developing: "Developing",
+    consolidating: "Consolidating",
+    leading: "Leading",
+  };
+  return labels[key] ?? key;
 }
 
 export default function ProgrammeWorkspace() {
@@ -73,6 +143,7 @@ export default function ProgrammeWorkspace() {
   const [comparison, setComparison] = useState<unknown>(null);
   const [quality, setQuality] = useState<unknown>(null);
   const [preview, setPreview] = useState<{ rows?: Array<Record<string, unknown>> } | null>(null);
+  const [overview, setOverview] = useState<ProgrammeOverview | null>(null);
   const [confirmArchive, setConfirmArchive] = useState(false);
 
   const selectedProgramme = useMemo(
@@ -100,6 +171,14 @@ export default function ProgrammeWorkspace() {
   useEffect(() => {
     void load();
   }, []);
+
+  useEffect(() => {
+    if (!selectedProgrammeId) {
+      setOverview(null);
+      return;
+    }
+    void loadOverview();
+  }, [selectedProgrammeId]);
 
   async function createProgramme() {
     setState({ loading: true });
@@ -133,6 +212,11 @@ export default function ProgrammeWorkspace() {
     const result = await api<{ groups: StructureGroup[]; items: StructureItem[] }>(`/api/programme-workspace/programme-versions/${selectedProgrammeId}/structure`);
     setGroups(result.groups);
     setItems(result.items);
+  }
+
+  async function loadOverview() {
+    if (!selectedProgrammeId) return;
+    setOverview(await api<ProgrammeOverview>(`/api/programme-workspace/programme-versions/${selectedProgrammeId}/overview`));
   }
 
   async function updateItem(item: StructureItem, patch: Partial<StructureItem>) {
@@ -232,13 +316,200 @@ export default function ProgrammeWorkspace() {
         </Card>
       </div>
 
-      <Tabs defaultValue="structure" className="space-y-4">
+      <Tabs defaultValue="overview" className="space-y-4">
         <TabsList>
+          <TabsTrigger value="overview"><BookOpenCheck className="mr-2 h-4 w-4" />Overview</TabsTrigger>
           <TabsTrigger value="structure"><Layers3 className="mr-2 h-4 w-4" />Structure</TabsTrigger>
           <TabsTrigger value="comparison"><GitCompareArrows className="mr-2 h-4 w-4" />Comparison</TabsTrigger>
           <TabsTrigger value="quality"><ListChecks className="mr-2 h-4 w-4" />Quality</TabsTrigger>
           <TabsTrigger value="map"><Map className="mr-2 h-4 w-4" />Map preview</TabsTrigger>
         </TabsList>
+
+        <TabsContent value="overview" className="space-y-4">
+          {!overview && (
+            <Card>
+              <CardContent className="flex flex-col gap-3 py-6 text-sm text-slate-600 sm:flex-row sm:items-center sm:justify-between">
+                <span>Select a programme version to view programme-level metrics.</span>
+                <Button variant="outline" onClick={loadOverview} disabled={!selectedProgrammeId}>Load overview</Button>
+              </CardContent>
+            </Card>
+          )}
+
+          {overview && (
+            <>
+              <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
+                <Card>
+                  <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                    <div>
+                      <CardTitle>{overview.programme.title ?? "Untitled programme"}</CardTitle>
+                      <p className="mt-1 text-sm text-slate-600">
+                        {overview.programme.code ?? "No programme code"} · {overview.programme.versionLabel}
+                        {overview.programme.academicYear ? ` · ${overview.programme.academicYear}` : ""}
+                      </p>
+                    </div>
+                    <Button variant="outline" onClick={loadOverview}><RefreshCw className="mr-2 h-4 w-4" />Refresh overview</Button>
+                  </CardHeader>
+                  <CardContent>
+                    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                      {[
+                        ["Modules", overview.summary.moduleCount],
+                        ["Stages", overview.summary.stageCount],
+                        ["Semesters", overview.summary.semesterCount],
+                        ["Last upload", formatDate(overview.summary.lastUploadDate)],
+                      ].map(([label, value]) => (
+                        <div key={label} className="rounded border border-slate-200 bg-white p-4">
+                          <div className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</div>
+                          <div className="mt-2 text-2xl font-semibold text-slate-950">{value}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader><CardTitle>Workspace Navigation</CardTitle></CardHeader>
+                  <CardContent className="space-y-3">
+                    <a className="flex items-center justify-between rounded border border-slate-200 px-4 py-3 text-sm font-medium text-slate-900 hover:bg-slate-50" href="/module-library">
+                      <span className="inline-flex items-center"><Library className="mr-2 h-4 w-4 text-blue-700" />Open Module Library</span>
+                      <ArrowRight className="h-4 w-4" />
+                    </a>
+                    <a className="flex items-center justify-between rounded border border-slate-200 px-4 py-3 text-sm font-medium text-slate-900 hover:bg-slate-50" href={overview.modules[0] ? `/module-builder?moduleId=${overview.modules[0].moduleId}` : "/module-builder"}>
+                      <span className="inline-flex items-center"><FileSearch className="mr-2 h-4 w-4 text-blue-700" />Open Module Builder</span>
+                      <ArrowRight className="h-4 w-4" />
+                    </a>
+                    <p className="text-xs leading-5 text-slate-500">Use the table below to inspect individual modules without leaving the programme context.</p>
+                  </CardContent>
+                </Card>
+              </div>
+
+              <div className="grid gap-4 lg:grid-cols-2">
+                <Card>
+                  <CardHeader><CardTitle>Curriculum Coverage</CardTitle></CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="space-y-3">
+                      {["greencomp", "lifecomp", "entrecomp", "digcomp"].map((key) => {
+                        const coverage = overview.curriculumCoverage.frameworks[key] ?? { totalCompetencies: 0, observedCompetencies: 0, coveragePercent: 0 };
+                        return (
+                          <div key={key} className="space-y-1">
+                            <div className="flex items-center justify-between text-sm">
+                              <span className="font-medium text-slate-900">{frameworkLabel(key)}</span>
+                              <span className="text-slate-600">{coverage.observedCompetencies}/{coverage.totalCompetencies} competences · {coverage.coveragePercent}%</span>
+                            </div>
+                            <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+                              <div className="h-full rounded-full bg-blue-600" style={{ width: `${Math.min(100, Math.max(0, coverage.coveragePercent))}%` }} />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-semibold text-slate-950">Evidence maturity distribution</h3>
+                      <div className="mt-3 flex flex-wrap gap-2">
+                        {Object.entries(overview.curriculumCoverage.evidenceMaturityDistribution).map(([key, value]) => (
+                          <Badge key={key} variant="outline" className="bg-slate-50">{maturityLabel(key)}: {value}</Badge>
+                        ))}
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <Card>
+                  <CardHeader><CardTitle>Review Status</CardTitle></CardHeader>
+                  <CardContent>
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      {[
+                        ["Claims generated", overview.reviewStatus.claimsGenerated],
+                        ["Claims reviewed", overview.reviewStatus.claimsReviewed],
+                        ["Accepted findings", overview.reviewStatus.findingsAccepted],
+                        ["Amended findings", overview.reviewStatus.findingsAmended],
+                        ["Clarification required", overview.reviewStatus.findingsRequiringClarification],
+                      ].map(([label, value]) => (
+                        <div key={label} className="rounded border border-slate-200 p-3">
+                          <div className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</div>
+                          <div className="mt-1 text-xl font-semibold text-slate-950">{value}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+              </div>
+
+              <Card>
+                <CardHeader><CardTitle>Data Quality</CardTitle></CardHeader>
+                <CardContent>
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    {[
+                      ["Missing module codes", overview.dataQuality.missingModuleCodes],
+                      ["Missing credits", overview.dataQuality.missingCredits],
+                      ["Missing stage or semester", overview.dataQuality.missingStageSemester],
+                      ["Duplicate placement warnings", overview.dataQuality.duplicatePlacementWarnings],
+                      ["Modules with no learning outcomes", overview.dataQuality.modulesWithNoLearningOutcomes],
+                      ["Modules with no assessments", overview.dataQuality.modulesWithNoAssessments],
+                    ].map(([label, value]) => (
+                      <div key={label} className="flex items-center justify-between rounded border border-slate-200 px-4 py-3">
+                        <span className="text-sm text-slate-700">{label}</span>
+                        <Badge variant={Number(value) > 0 ? "secondary" : "outline"}>{value}</Badge>
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <div>
+                    <CardTitle>Module Status</CardTitle>
+                    <p className="mt-1 text-sm text-slate-600">Programme modules with evidence, claims, review status and data-quality indicators.</p>
+                  </div>
+                  <a className="inline-flex items-center rounded border border-slate-200 px-3 py-2 text-sm font-medium text-slate-900 hover:bg-slate-50" href="/module-library">
+                    Module Library <ArrowRight className="ml-2 h-4 w-4" />
+                  </a>
+                </CardHeader>
+                <CardContent>
+                  <div className="overflow-auto rounded border border-slate-200">
+                    <table className="w-full min-w-[860px] text-left text-sm">
+                      <thead className="bg-slate-50 text-slate-500">
+                        <tr>
+                          <th className="p-2">Code</th>
+                          <th className="p-2">Title</th>
+                          <th className="p-2">Evidence</th>
+                          <th className="p-2">Claims</th>
+                          <th className="p-2">Review status</th>
+                          <th className="p-2">Data quality</th>
+                          <th className="p-2">Open</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {overview.modules.length === 0 && (
+                          <tr><td className="p-3 text-slate-500" colSpan={7}>No modules are currently linked to this programme version.</td></tr>
+                        )}
+                        {overview.modules.map((module) => (
+                          <tr key={module.moduleId} className="border-t">
+                            <td className="p-2 font-medium text-slate-950">{module.moduleCode ?? "Missing"}</td>
+                            <td className="p-2">{module.moduleTitle ?? "Untitled module"}</td>
+                            <td className="p-2">{module.evidenceCount}</td>
+                            <td className="p-2">{module.claimCount}</td>
+                            <td className="p-2"><Badge variant="outline">{module.reviewStatus}</Badge></td>
+                            <td className="p-2">
+                              <Badge variant={module.dataQualityStatus === "No issues" ? "outline" : "secondary"}>
+                                <ShieldCheck className="mr-1 h-3 w-3" />{module.dataQualityStatus}
+                              </Badge>
+                            </td>
+                            <td className="p-2">
+                              <a className="inline-flex items-center text-sm font-medium text-blue-700 hover:text-blue-900" href={`/module-builder?moduleId=${module.moduleId}`}>
+                                Builder <ArrowRight className="ml-1 h-3 w-3" />
+                              </a>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </CardContent>
+              </Card>
+            </>
+          )}
+        </TabsContent>
 
         <TabsContent value="structure">
           <Card>

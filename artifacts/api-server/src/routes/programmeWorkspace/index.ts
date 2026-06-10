@@ -11,6 +11,7 @@ import {
   buildInitialCuratedStructure,
   createProgrammeVersionFromSource,
   getCuratedStructure,
+  getProgrammeOverview,
   getProgrammeVersion,
   listProgrammeVersions,
   listSourceProgrammes,
@@ -91,6 +92,15 @@ router.get(
       return;
     }
     res.json({ programmeVersion: programme });
+  },
+);
+
+router.get(
+  "/programme-workspace/programme-versions/:programmeVersionId/overview",
+  ...protectedWorkspace,
+  requirePermission("programme.read"),
+  async (req, res): Promise<void> => {
+    res.json(await getProgrammeOverview(context(req), idParam(req, "programmeVersionId")));
   },
 );
 
