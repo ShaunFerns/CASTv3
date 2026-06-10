@@ -1,4 +1,4 @@
-import { and, asc, eq, inArray, isNull, or } from "drizzle-orm";
+import { and, asc, desc, eq, inArray, isNull, or } from "drizzle-orm";
 import {
   competenciesTable,
   competencyDomainsTable,
@@ -18,6 +18,10 @@ import {
   programmeAttributeExpectationsTable,
   programmeCompetencyExpectationsTable,
   programmeGraduateAttributesTable,
+  programmeMapAnnotationsTable,
+  programmeMapExportsTable,
+  programmeMapVersionsTable,
+  programmeMapsTable,
   programmeVersionsTable,
   reconciliationLinksTable,
 } from "@workspace/db";
@@ -41,7 +45,7 @@ type ActiveLayer = {
   key: string;
   name: string;
   family?: FrameworkFamilyKey;
-  layerType: "framework" | "programme_framework" | "source_curated" | "data_quality" | "evidence";
+  layerType: "framework" | "programme_framework" | "source_curated" | "data_quality" | "evidence" | "evidence_maturity";
   source: "registry" | "database" | "programme" | "system";
   active: boolean;
   placeholder: boolean;
@@ -131,6 +135,14 @@ const systemLayers: ActiveLayer[] = [
     active: true,
     placeholder: false,
   },
+  {
+    key: "evidence-maturity",
+    name: "Evidence maturity",
+    layerType: "evidence_maturity",
+    source: "system",
+    active: false,
+    placeholder: false,
+  },
 ];
 
 function metadataFamily(metadata: Record<string, unknown> | null | undefined, ownerType?: string | null): FrameworkFamilyKey {
@@ -151,6 +163,78 @@ function keyPart(value: string | null | undefined, fallback: string): string {
 
 function dateChanged(row: { createdAt: Date; updatedAt: Date }): boolean {
   return row.updatedAt.getTime() - row.createdAt.getTime() > 1000;
+}
+
+function csvEscape(value: unknown): string {
+  const text = value == null ? "" : String(value);
+  return /[",\n\r]/.test(text) ? `"${text.replace(/"/g, '""')}"` : text;
+}
+
+function exportRowsCsv(rows: Awaited<ReturnType<typeof getProgrammeMapProjection>>["rows"]): string {
+  const headers = ["Stage", "Semester", "Pathway", "Module Code", "Module Title", "Credits", "Evidence Count", "Data Quality Indicators", "Layer Indicators"];
+  const dataRows = rows.map((row) => [
+    row.stage,
+    row.semester,
+    row.pathway,
+    row.module.code,
+    row.module.title,
+    row.credits,
+    row.evidence.count,
+    row.quality.indicators.length,
+    row.layers.flatMap((layer) => (layer.indicators ?? []).map((indicator) => `${layer.name}: ${indicator.competencyName ?? indicator.domainName ?? "indicator"} ${indicator.observedLevel}`)).join("; "),
+  ]);
+  return [headers, ...dataRows].map((row) => row.map(csvEscape).join(",")).join("\n");
+}
+
+async function ensureProgrammeMapWorkspace(
+  context: ActorContext,
+  programmeVersionId: string,
+) {
+  const programmeVersion = await programme(context, programmeVersionId);
+  const key = `programme-version:${programmeVersionId}`;
+  const mapName = `${programmeVersion.programmeCode ?? "Programme"} ${programmeVersion.versionLabel} Map`;
+  const [map] = await db
+    .insert(programmeMapsTable)
+    .values({
+      institutionId: context.institutionId,
+      programmeVersionId,
+      key,
+      name: mapName,
+      description: "Programme map workspace generated from the curated programme structure.",
+      status: "active",
+      createdByUserId: context.userId,
+      metadata: { phase: "7A.2", programmeVersionId },
+    })
+    .onConflictDoUpdate({
+      target: [programmeMapsTable.institutionId, programmeMapsTable.key],
+      set: {
+        programmeVersionId,
+        name: mapName,
+        status: "active",
+        metadata: { phase: "7A.2", programmeVersionId },
+      },
+    })
+    .returning();
+
+  const [version] = await db
+    .insert(programmeMapVersionsTable)
+    .values({
+      programmeMapId: map.id,
+      versionLabel: "Workspace",
+      status: "active",
+      snapshot: { kind: "live_workspace", programmeVersionId },
+      createdByUserId: context.userId,
+    })
+    .onConflictDoUpdate({
+      target: [programmeMapVersionsTable.programmeMapId, programmeMapVersionsTable.versionLabel],
+      set: {
+        status: "active",
+        snapshot: { kind: "live_workspace", programmeVersionId },
+      },
+    })
+    .returning();
+
+  return { map, version };
 }
 
 async function programme(context: ActorContext, programmeVersionId: string) {
@@ -617,6 +701,7 @@ export async function getProgrammeMapProjection(
   const groupsById = new Map(data.groups.map((group) => [group.id, group]));
   const support = await supportingRows(context, data.items);
   const activeFrameworkLayers = activeLayers.filter((layer) => layer.active && layer.key.startsWith("framework:"));
+  const hasEvidenceMaturityLayer = activeLayers.some((layer) => layer.active && layer.layerType === "evidence_maturity");
   const hasProgrammeAttributeLayer = activeLayers.some((layer) => layer.active && layer.layerType === "programme_framework");
   const programmeAttributeBundle = hasProgrammeAttributeLayer ? await programmeAttributeLayer(context, programmeVersionId) : undefined;
   const frameworkEvaluationBundles = new Map<string, Awaited<ReturnType<typeof frameworkEvaluations>>>();
@@ -632,6 +717,23 @@ export async function getProgrammeMapProjection(
       await frameworkExpectations(context, programmeVersionId, frameworkKey, layer.versionLabel ?? defaultVersionForFramework(frameworkKey), layer.frameworkVersionId),
     );
   }
+  const itemIdsForMaturity = data.items.map((item) => item.id);
+  const moduleIdsForMaturity = data.items.map((item) => item.moduleId).filter((id): id is string => Boolean(id));
+  const maturityEvaluations = hasEvidenceMaturityLayer && (itemIdsForMaturity.length > 0 || moduleIdsForMaturity.length > 0)
+    ? await db
+        .select()
+        .from(competencyEvaluationsTable)
+        .where(
+          and(
+            eq(competencyEvaluationsTable.institutionId, context.institutionId),
+            eq(competencyEvaluationsTable.programmeVersionId, programmeVersionId),
+            or(
+              itemIdsForMaturity.length > 0 ? inArray(competencyEvaluationsTable.curatedStructureItemId, itemIdsForMaturity) : undefined,
+              moduleIdsForMaturity.length > 0 ? inArray(competencyEvaluationsTable.moduleId, moduleIdsForMaturity) : undefined,
+            ),
+          ),
+        )
+    : [];
 
   const rows = data.items.map((item) => {
     const group = resolveGroup(groupsById, item);
@@ -694,6 +796,33 @@ export async function getProgrammeMapProjection(
       layers: activeLayers
         .filter((layer) => layer.active)
         .map((layer) => {
+          if (layer.layerType === "evidence_maturity") {
+            const itemMaturityEvaluations = maturityEvaluations.filter((evaluation) => evaluation.curatedStructureItemId === item.id || evaluation.moduleId === item.moduleId);
+            const observedLevel = highestEvidenceMaturity(itemMaturityEvaluations.map((evaluation) => evaluation.observedLevel));
+            return {
+              key: layer.key,
+              name: layer.name,
+              family: layer.family,
+              layerType: layer.layerType,
+              status: itemMaturityEvaluations.length > 0 ? "observed" : "no_evidence",
+              coverage: "evidence_informed",
+              indicators: [
+                {
+                  evaluationId: `evidence-maturity:${item.id}`,
+                  competencyId: null,
+                  competencyName: "Overall evidence maturity",
+                  domainKey: "evidence-maturity",
+                  domainName: "Evidence maturity",
+                  expectedLevel: "none" as EvidenceMaturityLevel,
+                  observedLevel,
+                  comparison: observedLevel === "none" ? "evidence_gap" : "emergent_strength",
+                  status: itemMaturityEvaluations.length > 0 ? "observed" : "no_evidence",
+                  evidenceCount: itemMaturityEvaluations.length,
+                  rationale: "Aggregated from existing evidence-linked evaluations across active CAST layers.",
+                },
+              ],
+            };
+          }
           if (layer.layerType === "programme_framework") {
             const itemAttributeEvaluations = (programmeAttributeBundle?.evaluations ?? []).filter(
               (evaluation) => evaluation.curatedStructureItemId === item.id || evaluation.moduleId === item.moduleId,
@@ -896,6 +1025,132 @@ export async function getCoverageSummary(context: ActorContext, programmeVersion
       { key: "outcomes", label: "Outcomes", count: 0 },
       { key: "expectations", label: "Expectations", count: attributeExpectations.length + competencyExpectations.length },
     ],
+  };
+}
+
+export async function listProgrammeMapAnnotations(context: ActorContext, programmeVersionId: string) {
+  const workspace = await ensureProgrammeMapWorkspace(context, programmeVersionId);
+  const annotations = await db
+    .select()
+    .from(programmeMapAnnotationsTable)
+    .where(eq(programmeMapAnnotationsTable.programmeMapVersionId, workspace.version.id))
+    .orderBy(desc(programmeMapAnnotationsTable.createdAt));
+  return { map: workspace.map, mapVersion: workspace.version, annotations };
+}
+
+export async function createProgrammeMapAnnotation(
+  context: ActorContext,
+  programmeVersionId: string,
+  input: { body?: string; annotationType?: "comment" | "note" | "risk" | "decision"; metadata?: Record<string, unknown> },
+) {
+  const body = input.body?.trim();
+  if (!body) throw new Error("Comment text is required");
+  const workspace = await ensureProgrammeMapWorkspace(context, programmeVersionId);
+  const [annotation] = await db
+    .insert(programmeMapAnnotationsTable)
+    .values({
+      programmeMapVersionId: workspace.version.id,
+      authorUserId: context.userId,
+      annotationType: input.annotationType ?? "comment",
+      body,
+      metadata: {
+        ...(input.metadata ?? {}),
+        programmeVersionId,
+        phase: "7A.2",
+      },
+    })
+    .returning();
+  return { map: workspace.map, mapVersion: workspace.version, annotation };
+}
+
+export async function listProgrammeMapSnapshots(context: ActorContext, programmeVersionId: string) {
+  const workspace = await ensureProgrammeMapWorkspace(context, programmeVersionId);
+  const snapshots = await db
+    .select()
+    .from(programmeMapVersionsTable)
+    .where(eq(programmeMapVersionsTable.programmeMapId, workspace.map.id))
+    .orderBy(desc(programmeMapVersionsTable.createdAt));
+  return {
+    map: workspace.map,
+    workspaceVersionId: workspace.version.id,
+    snapshots: snapshots.filter((snapshot) => snapshot.id !== workspace.version.id),
+  };
+}
+
+export async function createProgrammeMapSnapshot(
+  context: ActorContext,
+  programmeVersionId: string,
+  input: { label?: string; activeLayerKeys?: string[] },
+) {
+  const workspace = await ensureProgrammeMapWorkspace(context, programmeVersionId);
+  const activeLayerKeys = input.activeLayerKeys?.filter((key) => typeof key === "string" && key.trim().length > 0) ?? [];
+  const projection = await getProgrammeMapProjection(context, programmeVersionId, activeLayerKeys);
+  const versionLabel = input.label?.trim() || `Snapshot ${new Date().toISOString()}`;
+  const [snapshot] = await db
+    .insert(programmeMapVersionsTable)
+    .values({
+      programmeMapId: workspace.map.id,
+      versionLabel,
+      status: "active",
+      snapshot: {
+        kind: "programme_map_snapshot",
+        programmeVersionId,
+        activeLayerKeys,
+        createdAt: new Date().toISOString(),
+        projection,
+      },
+      createdByUserId: context.userId,
+    })
+    .returning();
+  return { map: workspace.map, snapshot };
+}
+
+export async function listProgrammeMapExports(context: ActorContext, programmeVersionId: string) {
+  const workspace = await ensureProgrammeMapWorkspace(context, programmeVersionId);
+  const exports = await db
+    .select()
+    .from(programmeMapExportsTable)
+    .where(eq(programmeMapExportsTable.programmeMapVersionId, workspace.version.id))
+    .orderBy(desc(programmeMapExportsTable.createdAt));
+  return { map: workspace.map, mapVersion: workspace.version, exports };
+}
+
+export async function createProgrammeMapExport(
+  context: ActorContext,
+  programmeVersionId: string,
+  input: { format?: "json" | "csv"; activeLayerKeys?: string[] },
+) {
+  const format = input.format === "csv" ? "csv" : "json";
+  const workspace = await ensureProgrammeMapWorkspace(context, programmeVersionId);
+  const activeLayerKeys = input.activeLayerKeys?.filter((key) => typeof key === "string" && key.trim().length > 0) ?? [];
+  const projection = await getProgrammeMapProjection(context, programmeVersionId, activeLayerKeys);
+  const payload = format === "csv" ? exportRowsCsv(projection.rows) : JSON.stringify(projection, null, 2);
+  const filename = `cast-programme-map-${programmeVersionId}.${format}`;
+  const [exportRecord] = await db
+    .insert(programmeMapExportsTable)
+    .values({
+      programmeMapVersionId: workspace.version.id,
+      requestedByUserId: context.userId,
+      format,
+      status: "completed",
+      completedAt: new Date(),
+      metadata: {
+        phase: "7A.2",
+        programmeVersionId,
+        activeLayerKeys,
+        inlineExport: true,
+        rowCount: projection.rows.length,
+        filename,
+      },
+    })
+    .returning();
+  return {
+    map: workspace.map,
+    mapVersion: workspace.version,
+    export: exportRecord,
+    filename,
+    contentType: format === "csv" ? "text/csv" : "application/json",
+    payload,
   };
 }
 

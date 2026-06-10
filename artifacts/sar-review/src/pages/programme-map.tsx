@@ -1,11 +1,13 @@
 import { useEffect, useMemo, useState } from "react";
-import { AlertTriangle, CheckCircle2, Layers3, Map, RefreshCw, ShieldCheck, SlidersHorizontal } from "lucide-react";
+import { AlertTriangle, Camera, CheckCircle2, Download, Layers3, Map, MessageSquare, RefreshCw, ShieldCheck, SlidersHorizontal } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { Textarea } from "@/components/ui/textarea";
 
 type ProgrammeVersion = {
   id: string;
@@ -184,6 +186,36 @@ type DesignLayerSummary = {
   highestObservedMaturity: string;
 };
 
+type ProgrammeMapAnnotation = {
+  id: string;
+  annotationType: string;
+  body: string;
+  createdAt: string;
+};
+
+type ProgrammeMapSnapshot = {
+  id: string;
+  versionLabel: string;
+  status: string;
+  createdAt: string;
+};
+
+type ProgrammeMapExport = {
+  id: string;
+  format: string;
+  status: string;
+  createdAt: string;
+  completedAt?: string | null;
+  metadata?: Record<string, unknown>;
+};
+
+type ProgrammeMapExportResponse = {
+  export: ProgrammeMapExport;
+  filename: string;
+  contentType: string;
+  payload: string;
+};
+
 async function api<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     credentials: "include",
@@ -222,6 +254,11 @@ function evidenceMaturityLabel(level: string) {
     demonstrate: "Leading",
   };
   return labels[level] ?? level;
+}
+
+function formatDate(value?: string | null) {
+  if (!value) return "Not available";
+  return new Intl.DateTimeFormat("en-GB", { day: "2-digit", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" }).format(new Date(value));
 }
 
 const maturityLevels = ["none", "developing", "consolidating", "leading"] as const;
@@ -374,6 +411,11 @@ export default function ProgrammeMapPage() {
   const [digCompCoverage, setDigCompCoverage] = useState<GreenCompCoverageSummary>();
   const [greenCompAnalysis, setGreenCompAnalysis] = useState<FrameworkExpectationAnalysis>();
   const [assessmentDesignSummary, setAssessmentDesignSummary] = useState<DesignLayerSummary>();
+  const [annotations, setAnnotations] = useState<ProgrammeMapAnnotation[]>([]);
+  const [snapshots, setSnapshots] = useState<ProgrammeMapSnapshot[]>([]);
+  const [exports, setExports] = useState<ProgrammeMapExport[]>([]);
+  const [commentText, setCommentText] = useState("");
+  const [snapshotLabel, setSnapshotLabel] = useState("");
 
   const groupedRows = useMemo(() => groupRows(projection?.rows ?? []), [projection]);
   const activeLayers = useMemo(() => layers.filter((layer) => activeLayerKeys.includes(layer.key)), [layers, activeLayerKeys]);
@@ -412,6 +454,9 @@ export default function ProgrammeMapPage() {
         digCompCoverageResult,
         greenCompAnalysisResult,
         assessmentDesignResult,
+        annotationResult,
+        snapshotResult,
+        exportResult,
       ] = await Promise.all([
         api<{ layers: MapLayer[] }>(`/api/programme-map/programme-versions/${programmeVersionId}/layers`),
         api<ProgrammeMapProjection>(`/api/programme-map/programme-versions/${programmeVersionId}?layers=${layerQuery}`),
@@ -422,6 +467,9 @@ export default function ProgrammeMapPage() {
         api<GreenCompCoverageSummary>(`/api/programme-map/programme-versions/${programmeVersionId}/digcomp/coverage-summary`),
         api<FrameworkExpectationAnalysis>(`/api/programme-map/programme-versions/${programmeVersionId}/frameworks/greencomp/expectation-analysis`),
         api<DesignLayerSummary>(`/api/programme-map/programme-versions/${programmeVersionId}/assessment-design/summary`),
+        api<{ annotations: ProgrammeMapAnnotation[] }>(`/api/programme-map/programme-versions/${programmeVersionId}/annotations`),
+        api<{ snapshots: ProgrammeMapSnapshot[] }>(`/api/programme-map/programme-versions/${programmeVersionId}/snapshots`),
+        api<{ exports: ProgrammeMapExport[] }>(`/api/programme-map/programme-versions/${programmeVersionId}/exports`),
       ]);
       setLayers(layerResult.layers);
       setProjection(mapResult);
@@ -432,6 +480,9 @@ export default function ProgrammeMapPage() {
       setDigCompCoverage(digCompCoverageResult);
       setGreenCompAnalysis(greenCompAnalysisResult);
       setAssessmentDesignSummary(assessmentDesignResult);
+      setAnnotations(annotationResult.annotations);
+      setSnapshots(snapshotResult.snapshots);
+      setExports(exportResult.exports);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to load programme map");
     } finally {
@@ -451,6 +502,42 @@ export default function ProgrammeMapPage() {
     const next = enabled ? [...new Set([...activeLayerKeys, layerKey])] : activeLayerKeys.filter((key) => key !== layerKey);
     setActiveLayerKeys(next);
     void loadMap(selectedProgrammeId, next);
+  }
+
+  async function createComment() {
+    if (!selectedProgrammeId || !commentText.trim()) return;
+    await api(`/api/programme-map/programme-versions/${selectedProgrammeId}/annotations`, {
+      method: "POST",
+      body: JSON.stringify({ annotationType: "comment", body: commentText }),
+    });
+    setCommentText("");
+    await loadMap();
+  }
+
+  async function createSnapshot() {
+    if (!selectedProgrammeId) return;
+    await api(`/api/programme-map/programme-versions/${selectedProgrammeId}/snapshots`, {
+      method: "POST",
+      body: JSON.stringify({ label: snapshotLabel || undefined, activeLayerKeys }),
+    });
+    setSnapshotLabel("");
+    await loadMap();
+  }
+
+  async function createExport(format: "json" | "csv") {
+    if (!selectedProgrammeId) return;
+    const result = await api<ProgrammeMapExportResponse>(`/api/programme-map/programme-versions/${selectedProgrammeId}/exports`, {
+      method: "POST",
+      body: JSON.stringify({ format, activeLayerKeys }),
+    });
+    const blob = new Blob([result.payload], { type: result.contentType });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = result.filename;
+    anchor.click();
+    URL.revokeObjectURL(url);
+    await loadMap();
   }
 
   const selectedProgramme = programmes.find((programme) => programme.id === selectedProgrammeId);
@@ -543,6 +630,7 @@ export default function ProgrammeMapPage() {
             <TabsList>
               <TabsTrigger value="map"><Map className="mr-2 h-4 w-4" />Map</TabsTrigger>
               <TabsTrigger value="coverage"><Layers3 className="mr-2 h-4 w-4" />Coverage</TabsTrigger>
+              <TabsTrigger value="workspace"><MessageSquare className="mr-2 h-4 w-4" />Workspace</TabsTrigger>
             </TabsList>
 
             <TabsContent value="map" className="space-y-4">
@@ -656,6 +744,99 @@ export default function ProgrammeMapPage() {
                 <FrameworkCoveragePanel title="EntreComp Summary" summary={entreCompCoverage} />
                 <FrameworkCoveragePanel title="DigComp Summary" summary={digCompCoverage} />
                 <DesignLayerPanel title="Assessment Summary" summary={assessmentDesignSummary} />
+              </div>
+            </TabsContent>
+
+            <TabsContent value="workspace">
+              <div className="grid gap-4 xl:grid-cols-[1.1fr_1fr]">
+                <Card>
+                  <CardHeader><CardTitle>Comments and Annotations</CardTitle></CardHeader>
+                  <CardContent className="space-y-4">
+                    <div className="space-y-2">
+                      <Textarea
+                        value={commentText}
+                        onChange={(event) => setCommentText(event.target.value)}
+                        placeholder="Add a programme map comment for reviewers or enhancement planning..."
+                        rows={4}
+                      />
+                      <Button onClick={createComment} disabled={!selectedProgrammeId || !commentText.trim() || loading}>
+                        <MessageSquare className="mr-2 h-4 w-4" />
+                        Add comment
+                      </Button>
+                    </div>
+                    <div className="space-y-3">
+                      {annotations.length === 0 && <p className="text-sm text-slate-500">No comments yet.</p>}
+                      {annotations.map((annotation) => (
+                        <div key={annotation.id} className="rounded border border-slate-200 bg-white p-3">
+                          <div className="flex flex-wrap items-center justify-between gap-2">
+                            <Badge variant="outline">{annotation.annotationType}</Badge>
+                            <span className="text-xs text-slate-500">{formatDate(annotation.createdAt)}</span>
+                          </div>
+                          <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">{annotation.body}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </CardContent>
+                </Card>
+
+                <div className="space-y-4">
+                  <Card>
+                    <CardHeader><CardTitle>Snapshots</CardTitle></CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="flex flex-col gap-2 sm:flex-row">
+                        <Input
+                          value={snapshotLabel}
+                          onChange={(event) => setSnapshotLabel(event.target.value)}
+                          placeholder="Snapshot label"
+                        />
+                        <Button onClick={createSnapshot} disabled={!selectedProgrammeId || loading}>
+                          <Camera className="mr-2 h-4 w-4" />
+                          Save
+                        </Button>
+                      </div>
+                      <div className="space-y-2">
+                        {snapshots.length === 0 && <p className="text-sm text-slate-500">No snapshots saved.</p>}
+                        {snapshots.slice(0, 8).map((snapshot) => (
+                          <div key={snapshot.id} className="flex items-center justify-between gap-3 rounded border border-slate-200 px-3 py-2">
+                            <div>
+                              <div className="text-sm font-medium text-slate-900">{snapshot.versionLabel}</div>
+                              <div className="text-xs text-slate-500">{formatDate(snapshot.createdAt)}</div>
+                            </div>
+                            <Badge variant="outline">{snapshot.status}</Badge>
+                          </div>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  <Card>
+                    <CardHeader><CardTitle>Exports</CardTitle></CardHeader>
+                    <CardContent className="space-y-4">
+                      <div className="flex flex-wrap gap-2">
+                        <Button variant="outline" onClick={() => createExport("json")} disabled={!selectedProgrammeId || loading}>
+                          <Download className="mr-2 h-4 w-4" />
+                          JSON
+                        </Button>
+                        <Button variant="outline" onClick={() => createExport("csv")} disabled={!selectedProgrammeId || loading}>
+                          <Download className="mr-2 h-4 w-4" />
+                          CSV
+                        </Button>
+                      </div>
+                      <div className="space-y-2">
+                        {exports.length === 0 && <p className="text-sm text-slate-500">No exports recorded.</p>}
+                        {exports.slice(0, 8).map((exportRecord) => (
+                          <div key={exportRecord.id} className="flex items-center justify-between gap-3 rounded border border-slate-200 px-3 py-2">
+                            <div>
+                              <div className="text-sm font-medium text-slate-900">{String(exportRecord.metadata?.filename ?? `Programme map ${exportRecord.format}`)}</div>
+                              <div className="text-xs text-slate-500">{formatDate(exportRecord.completedAt ?? exportRecord.createdAt)}</div>
+                            </div>
+                            <Badge variant="outline">{exportRecord.format.toUpperCase()}</Badge>
+                          </div>
+                        ))}
+                      </div>
+                    </CardContent>
+                  </Card>
+                </div>
               </div>
             </TabsContent>
           </Tabs>

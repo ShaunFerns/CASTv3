@@ -11,6 +11,9 @@ import {
   getCoverageSummary,
   createDigCompEvaluation,
   createEntreCompEvaluation,
+  createProgrammeMapAnnotation,
+  createProgrammeMapExport,
+  createProgrammeMapSnapshot,
   createFrameworkCompetencyExpectation,
   createGreenCompEvaluation,
   createLifeCompEvaluation,
@@ -23,6 +26,9 @@ import {
   getFrameworkRegistry,
   getGreenCompCoverageSummary,
   getLifeCompCoverageSummary,
+  listProgrammeMapAnnotations,
+  listProgrammeMapExports,
+  listProgrammeMapSnapshots,
   getProgrammeOwnedFramework,
   getProgrammeMapMetadata,
   getProgrammeMapProjection,
@@ -106,6 +112,100 @@ router.get(
   requirePermission("programme.read"),
   async (req, res): Promise<void> => {
     res.json(await getCoverageSummary(context(req), idParam(req, "programmeVersionId")));
+  },
+);
+
+router.get(
+  "/programme-map/programme-versions/:programmeVersionId/annotations",
+  ...protectedProgrammeMap,
+  requirePermission("programme.read"),
+  async (req, res): Promise<void> => {
+    res.json(await listProgrammeMapAnnotations(context(req), idParam(req, "programmeVersionId")));
+  },
+);
+
+router.post(
+  "/programme-map/programme-versions/:programmeVersionId/annotations",
+  ...protectedProgrammeMap,
+  requirePermission("programme.write"),
+  async (req, res): Promise<void> => {
+    const programmeVersionId = idParam(req, "programmeVersionId");
+    const result = await createProgrammeMapAnnotation(context(req), programmeVersionId, req.body);
+    await writeRequestAuditEvent({
+      req,
+      actionType: "programme_map.annotation_created",
+      subjectType: "programme_map",
+      subjectId: result.map.id,
+      metadata: {
+        programmeVersionId,
+        annotationId: result.annotation.id,
+        annotationType: result.annotation.annotationType,
+      },
+    });
+    res.status(201).json(result);
+  },
+);
+
+router.get(
+  "/programme-map/programme-versions/:programmeVersionId/snapshots",
+  ...protectedProgrammeMap,
+  requirePermission("programme.read"),
+  async (req, res): Promise<void> => {
+    res.json(await listProgrammeMapSnapshots(context(req), idParam(req, "programmeVersionId")));
+  },
+);
+
+router.post(
+  "/programme-map/programme-versions/:programmeVersionId/snapshots",
+  ...protectedProgrammeMap,
+  requirePermission("programme.write"),
+  async (req, res): Promise<void> => {
+    const programmeVersionId = idParam(req, "programmeVersionId");
+    const result = await createProgrammeMapSnapshot(context(req), programmeVersionId, req.body);
+    await writeRequestAuditEvent({
+      req,
+      actionType: "programme_map.snapshot_created",
+      subjectType: "programme_map",
+      subjectId: result.map.id,
+      metadata: {
+        programmeVersionId,
+        snapshotId: result.snapshot.id,
+        versionLabel: result.snapshot.versionLabel,
+      },
+    });
+    res.status(201).json(result);
+  },
+);
+
+router.get(
+  "/programme-map/programme-versions/:programmeVersionId/exports",
+  ...protectedProgrammeMap,
+  requirePermission("programme.read"),
+  async (req, res): Promise<void> => {
+    res.json(await listProgrammeMapExports(context(req), idParam(req, "programmeVersionId")));
+  },
+);
+
+router.post(
+  "/programme-map/programme-versions/:programmeVersionId/exports",
+  ...protectedProgrammeMap,
+  requirePermission("programme.read"),
+  async (req, res): Promise<void> => {
+    const programmeVersionId = idParam(req, "programmeVersionId");
+    const result = await createProgrammeMapExport(context(req), programmeVersionId, req.body);
+    await writeRequestAuditEvent({
+      req,
+      actionType: "programme_map.export_created",
+      subjectType: "programme_map",
+      subjectId: result.map.id,
+      metadata: {
+        programmeVersionId,
+        exportId: result.export.id,
+        format: result.export.format,
+        inlineExport: true,
+      },
+    });
+    res.status(201).json(result);
   },
 );
 
