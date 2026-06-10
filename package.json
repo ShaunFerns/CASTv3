@@ -19,7 +19,7 @@
     "db:validate:phase5": "node ./scripts/phase5a-programme-map-validation.mjs && node ./scripts/phase5b-greencomp-validation.mjs && node ./scripts/phase5c-greencomp-expectations-validation.mjs && node ./scripts/phase5c-lifecomp-validation.mjs && node ./scripts/phase5f-entrecomp-validation.mjs && node ./scripts/phase5g-digcomp-validation.mjs && node ./scripts/phase5j-curriculum-design-layers-validation.mjs",
     "smoke:render-local": "node ./scripts/render-smoke.mjs",
     "typecheck:libs": "tsc --build",
-    "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --if-present run typecheck"
+    "typecheck": "pnpm run typecheck:libs && pnpm -r --filter \"./artifacts/**\" --filter \"./scripts\" --filter \"./tools/**\" --if-present run typecheck"
   },
   "private": true,
   "devDependencies": {
