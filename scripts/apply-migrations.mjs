@@ -9,8 +9,27 @@ const requireFromDb = createRequire(new URL("../lib/db/package.json", import.met
 
 const migrationsDir = path.resolve(fileURLToPath(new URL("../lib/db/migrations", import.meta.url)));
 const dryRun = process.argv.includes("--dry-run") || process.env.CAST_MIGRATIONS_DRY_RUN === "true";
-const migrationIdPattern = /^(?:000[1-9]|001[0-1])_.*\.sql$/;
-const expectedMigrationIds = new Set(["0001", "0002", "0003", "0004", "0005", "0006", "0007", "0008", "0009", "0010", "0011"]);
+const includeLegacyCompatibilityViews =
+  process.argv.includes("--include-legacy-compatibility") ||
+  process.env.CAST_INCLUDE_LEGACY_COMPATIBILITY_VIEWS === "true";
+const migrationFilenamePattern = /^\d{4}_.*\.sql$/;
+const productionMigrationIds = [
+  "0001",
+  "0002",
+  "0003",
+  "0004",
+  "0005",
+  "0006",
+  "0007",
+  "0008",
+  "0009",
+  "0010",
+  "0011",
+  "0012",
+  "0013",
+];
+const expectedMigrationIds = new Set(productionMigrationIds);
+const optionalLegacyMigrationIds = new Set(["0090"]);
 
 const requiredObjectsByMigration = {
   "0001": {
@@ -57,6 +76,18 @@ const requiredObjectsByMigration = {
     tables: ["institutions", "users", "app_sessions", "modules", "evidence_items", "audit_events", "cast_schema_migrations"],
     publicTablesHaveRls: true,
   },
+  "0012": {
+    tables: ["review_cycle_participants", "review_notes"],
+  },
+  "0013": {
+    tables: [
+      "swot_item_readiness_links",
+      "swot_item_review_note_links",
+      "action_plan_item_claim_links",
+      "action_plan_item_human_review_links",
+      "action_plan_item_review_note_links",
+    ],
+  },
 };
 
 function checksum(sql) {
@@ -82,7 +113,7 @@ function databaseClient() {
 
 async function loadMigrations() {
   const filenames = (await readdir(migrationsDir))
-    .filter((filename) => migrationIdPattern.test(filename))
+    .filter((filename) => migrationFilenamePattern.test(filename))
     .sort();
 
   const migrations = [];
@@ -99,7 +130,17 @@ async function loadMigrations() {
     }
   }
 
-  return migrations.filter((migration) => expectedMigrationIds.has(migration.id));
+  const selectedMigrationIds = new Set(expectedMigrationIds);
+  if (includeLegacyCompatibilityViews) {
+    for (const legacyMigrationId of optionalLegacyMigrationIds) {
+      if (!actualIds.has(legacyMigrationId)) {
+        throw new Error(`Requested optional migration ${legacyMigrationId} was not found in ${migrationsDir}`);
+      }
+      selectedMigrationIds.add(legacyMigrationId);
+    }
+  }
+
+  return migrations.filter((migration) => selectedMigrationIds.has(migration.id));
 }
 
 async function ensureLedger(client) {
@@ -235,7 +276,11 @@ async function applyMigration(client, migration) {
 async function main() {
   const migrations = await loadMigrations();
   console.log(`CORE_MIGRATIONS=${migrations.map((migration) => migration.filename).join(",")}`);
-  console.log("OPTIONAL_MIGRATION_SKIPPED=0090_legacy_compatibility_views.sql");
+  if (includeLegacyCompatibilityViews) {
+    console.log("OPTIONAL_MIGRATION_INCLUDED=0090_legacy_compatibility_views.sql");
+  } else {
+    console.log("OPTIONAL_MIGRATION_SKIPPED=0090_legacy_compatibility_views.sql");
+  }
 
   if (dryRun) {
     console.log("CAST_MIGRATIONS_DRY_RUN=ok");
