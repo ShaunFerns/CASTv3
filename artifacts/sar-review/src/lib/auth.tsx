@@ -5,6 +5,8 @@ interface AuthContextType {
   isAuthenticated: boolean;
   isLoading: boolean;
   userId?: string;
+  effectivePermissions: string[];
+  canBootstrapOverrideDelete: boolean;
   onboarding?: {
     guidedTourCompleted: boolean;
     guidedTourCompletedAt?: string | null;
@@ -21,6 +23,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [userId, setUserId] = useState<string | undefined>();
+  const [effectivePermissions, setEffectivePermissions] = useState<string[]>([]);
   const [onboarding, setOnboarding] = useState<AuthContextType["onboarding"]>();
 
   const refreshContext = async () => {
@@ -29,10 +32,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (!r.ok) throw new Error("No CAST v3 context");
         return r.json();
       })
-      .then((data: { userId?: string; roleKeys?: string[]; onboarding?: AuthContextType["onboarding"] }) => {
+      .then((data: { userId?: string; roleKeys?: string[]; effectivePermissions?: string[]; onboarding?: AuthContextType["onboarding"] }) => {
         setIsAuthenticated(true);
         setIsAdmin(data.roleKeys?.includes("institution_admin") === true || data.roleKeys?.includes("platform_admin") === true);
         setUserId(data.userId);
+        setEffectivePermissions(data.effectivePermissions ?? []);
         setOnboarding(data.onboarding);
       })
       .catch(async () => {
@@ -42,11 +46,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           setIsAuthenticated(false);
           setIsAdmin(data.isAdmin === true);
           setUserId(undefined);
+          setEffectivePermissions([]);
           setOnboarding(undefined);
         } catch {
           setIsAuthenticated(false);
           setIsAdmin(false);
           setUserId(undefined);
+          setEffectivePermissions([]);
           setOnboarding(undefined);
         }
       });
@@ -76,11 +82,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsAuthenticated(false);
     setIsAdmin(false);
     setUserId(undefined);
+    setEffectivePermissions([]);
     setOnboarding(undefined);
   };
 
   return (
-    <AuthContext.Provider value={{ isAdmin, isAuthenticated, isLoading, userId, onboarding, refreshContext, login, logout }}>
+    <AuthContext.Provider
+      value={{
+        isAdmin,
+        isAuthenticated,
+        isLoading,
+        userId,
+        effectivePermissions,
+        canBootstrapOverrideDelete: effectivePermissions.includes("cleanup.bootstrap_override_delete"),
+        onboarding,
+        refreshContext,
+        login,
+        logout,
+      }}
+    >
       {children}
     </AuthContext.Provider>
   );

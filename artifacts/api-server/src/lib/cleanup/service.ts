@@ -1,9 +1,12 @@
 import { and, count, eq, inArray, or, sql } from "drizzle-orm";
 import {
+  actionPlanItemsTable,
   actionPlanEvidenceLinksTable,
   actionPlansTable,
   aiClaimsTable,
+  analysisRunsTable,
   claimEvidenceLinksTable,
+  clarificationRequestsTable,
   curatedStructureItemsTable,
   curatedStructuresTable,
   dataQualityResultLinksTable,
@@ -19,6 +22,10 @@ import {
   moduleDescriptorsTable,
   modulesTable,
   programmeVersionsTable,
+  readinessAssessmentItemsTable,
+  readinessAssessmentsTable,
+  reviewCyclesTable,
+  swotItemsTable,
   sourceModulesTable,
   sourceProgrammesTable,
   sourceRecordsTable,
@@ -38,6 +45,27 @@ export type CleanupResult = {
   deleted?: boolean;
   counts?: Record<string, number>;
   blockedReasons?: string[];
+  diagnostics?: CleanupDiagnostics;
+  bootstrapOverride?: boolean;
+};
+
+export type CleanupDiagnostics = {
+  claims: number;
+  humanReviews: number;
+  acceptedFindings: number;
+  amendedFindings: number;
+  findings: number;
+  clarificationRequests: number;
+  analysisRuns: number;
+  reviewCycles: number;
+  readinessAssessments: number;
+  readinessItems: number;
+  swotItems: number;
+  actionPlans: number;
+  actionPlanItems: number;
+  actionPlanReferences: number;
+  blockedReasons: string[];
+  canHardDelete: boolean;
 };
 
 function ids<T extends { id: string }>(rows: T[]): string[] {
@@ -101,6 +129,130 @@ async function countActionPlanUsage(context: ActorContext, input: { moduleIds?: 
   }
 
   return total;
+}
+
+async function cleanupDiagnosticsForScope(
+  context: ActorContext,
+  input: { moduleIds?: string[]; programmeVersionIds?: string[]; evidenceIds?: string[] },
+): Promise<CleanupDiagnostics> {
+  const claimConditions = [];
+  if (input.moduleIds?.length) claimConditions.push(inArray(aiClaimsTable.moduleId, input.moduleIds));
+  if (input.programmeVersionIds?.length) claimConditions.push(inArray(aiClaimsTable.programmeVersionId, input.programmeVersionIds));
+
+  const claimRows = claimConditions.length
+    ? await db
+        .select({ id: aiClaimsTable.id, analysisRunId: aiClaimsTable.analysisRunId })
+        .from(aiClaimsTable)
+        .where(and(eq(aiClaimsTable.institutionId, context.institutionId), or(...claimConditions)))
+    : [];
+  const claimIds = ids(claimRows);
+  const analysisRunIds = [...new Set(claimRows.map((claim) => claim.analysisRunId).filter((id): id is string => Boolean(id)))];
+
+  const humanReviewRows = claimIds.length
+    ? await db
+        .select({ id: humanReviewsTable.id, aiClaimId: humanReviewsTable.aiClaimId, decision: humanReviewsTable.decision })
+        .from(humanReviewsTable)
+        .where(and(eq(humanReviewsTable.institutionId, context.institutionId), inArray(humanReviewsTable.aiClaimId, claimIds)))
+    : [];
+
+  const acceptedFindingClaimIds = new Set(
+    humanReviewRows
+      .filter((review) => review.decision === "accept" && review.aiClaimId)
+      .map((review) => review.aiClaimId as string),
+  );
+  const amendedFindingClaimIds = new Set(
+    humanReviewRows
+      .filter((review) => review.decision === "amend" && review.aiClaimId)
+      .map((review) => review.aiClaimId as string),
+  );
+  const findingClaimIds = new Set([...acceptedFindingClaimIds, ...amendedFindingClaimIds]);
+
+  const clarificationRows = claimIds.length
+    ? await db
+        .select({ id: clarificationRequestsTable.id })
+        .from(clarificationRequestsTable)
+        .where(and(eq(clarificationRequestsTable.institutionId, context.institutionId), inArray(clarificationRequestsTable.aiClaimId, claimIds)))
+    : [];
+
+  const reviewCycles = input.programmeVersionIds?.length
+    ? await db
+        .select({ id: reviewCyclesTable.id })
+        .from(reviewCyclesTable)
+        .where(and(eq(reviewCyclesTable.institutionId, context.institutionId), inArray(reviewCyclesTable.programmeVersionId, input.programmeVersionIds)))
+    : [];
+  const reviewCycleIds = ids(reviewCycles);
+
+  const readinessConditions = [];
+  if (input.programmeVersionIds?.length) readinessConditions.push(inArray(readinessAssessmentsTable.programmeVersionId, input.programmeVersionIds));
+  if (reviewCycleIds.length) readinessConditions.push(inArray(readinessAssessmentsTable.reviewCycleId, reviewCycleIds));
+  const readinessAssessments = readinessConditions.length
+    ? await db
+        .select({ id: readinessAssessmentsTable.id })
+        .from(readinessAssessmentsTable)
+        .where(and(eq(readinessAssessmentsTable.institutionId, context.institutionId), or(...readinessConditions)))
+    : [];
+  const readinessAssessmentIds = ids(readinessAssessments);
+  const readinessItems = readinessAssessmentIds.length
+    ? await db
+        .select({ id: readinessAssessmentItemsTable.id })
+        .from(readinessAssessmentItemsTable)
+        .where(inArray(readinessAssessmentItemsTable.readinessAssessmentId, readinessAssessmentIds))
+    : [];
+
+  const swotConditions = [];
+  if (input.programmeVersionIds?.length) swotConditions.push(inArray(swotItemsTable.programmeVersionId, input.programmeVersionIds));
+  if (reviewCycleIds.length) swotConditions.push(inArray(swotItemsTable.reviewCycleId, reviewCycleIds));
+  const swotItems = swotConditions.length
+    ? await db
+        .select({ id: swotItemsTable.id })
+        .from(swotItemsTable)
+        .where(and(eq(swotItemsTable.institutionId, context.institutionId), or(...swotConditions)))
+    : [];
+
+  const actionPlanConditions = [];
+  if (input.programmeVersionIds?.length) actionPlanConditions.push(inArray(actionPlansTable.programmeVersionId, input.programmeVersionIds));
+  if (reviewCycleIds.length) actionPlanConditions.push(inArray(actionPlansTable.reviewCycleId, reviewCycleIds));
+  const actionPlans = actionPlanConditions.length
+    ? await db
+        .select({ id: actionPlansTable.id })
+        .from(actionPlansTable)
+        .where(and(eq(actionPlansTable.institutionId, context.institutionId), or(...actionPlanConditions)))
+    : [];
+  const actionPlanIds = ids(actionPlans);
+  const actionPlanItems = actionPlanIds.length
+    ? await db
+        .select({ id: actionPlanItemsTable.id })
+        .from(actionPlanItemsTable)
+        .where(inArray(actionPlanItemsTable.actionPlanId, actionPlanIds))
+    : [];
+
+  const actionPlanReferences = await countActionPlanUsage(context, input);
+  const blockedReasons: string[] = [];
+  if (humanReviewRows.length > 0) {
+    blockedReasons.push(`${humanReviewRows.length} human review record${humanReviewRows.length === 1 ? "" : "s"} exist`);
+  }
+  if (actionPlanReferences > 0) {
+    blockedReasons.push(`${actionPlanReferences} action plan reference${actionPlanReferences === 1 ? "" : "s"} exist`);
+  }
+
+  return {
+    claims: claimRows.length,
+    humanReviews: humanReviewRows.length,
+    acceptedFindings: acceptedFindingClaimIds.size,
+    amendedFindings: amendedFindingClaimIds.size,
+    findings: findingClaimIds.size,
+    clarificationRequests: clarificationRows.length,
+    analysisRuns: analysisRunIds.length,
+    reviewCycles: reviewCycles.length,
+    readinessAssessments: readinessAssessments.length,
+    readinessItems: readinessItems.length,
+    swotItems: swotItems.length,
+    actionPlans: actionPlans.length,
+    actionPlanItems: actionPlanItems.length,
+    actionPlanReferences,
+    blockedReasons,
+    canHardDelete: blockedReasons.length === 0,
+  };
 }
 
 async function moduleScope(context: ActorContext, moduleId: string) {
@@ -203,16 +355,13 @@ async function importBatchScope(context: ActorContext, importBatchId: string) {
 }
 
 async function assertCanHardDelete(context: ActorContext, input: { moduleIds?: string[]; programmeVersionIds?: string[]; evidenceIds?: string[] }) {
-  const blockedReasons: string[] = [];
-  const humanReviewCount = await countHumanReviews(context, input);
-  if (humanReviewCount > 0) blockedReasons.push(`${humanReviewCount} human review record${humanReviewCount === 1 ? "" : "s"} exist`);
-
-  const actionPlanUsage = await countActionPlanUsage(context, input);
-  if (actionPlanUsage > 0) blockedReasons.push(`${actionPlanUsage} action plan reference${actionPlanUsage === 1 ? "" : "s"} exist`);
+  const diagnostics = await cleanupDiagnosticsForScope(context, input);
+  const blockedReasons = diagnostics.blockedReasons;
 
   if (blockedReasons.length > 0) {
     const error = new Error(`Cannot delete because ${blockedReasons.join(" and ")}.`);
-    (error as Error & { blockedReasons?: string[] }).blockedReasons = blockedReasons;
+    (error as Error & { blockedReasons?: string[]; diagnostics?: CleanupDiagnostics }).blockedReasons = blockedReasons;
+    (error as Error & { blockedReasons?: string[]; diagnostics?: CleanupDiagnostics }).diagnostics = diagnostics;
     throw error;
   }
 }
@@ -242,6 +391,11 @@ export async function listCleanupImportBatches(context: ActorContext) {
           programmeVersions: scope.programmeVersionIds.length,
           structureItems: scope.curatedStructureItemIds.length,
         },
+        cleanupDiagnostics: await cleanupDiagnosticsForScope(context, {
+          moduleIds: scope.moduleIds,
+          programmeVersionIds: scope.programmeVersionIds,
+          evidenceIds: scope.evidenceIds,
+        }),
       };
     })),
   };
@@ -297,16 +451,69 @@ export async function archiveProgrammeVersion(context: ActorContext, programmeVe
   return { action: "archive", subject: "programme_version", subjectId: programmeVersionId, archived: true, counts: { curatedStructures: structures.length } };
 }
 
-export async function hardDeleteImportBatch(context: ActorContext, importBatchId: string): Promise<CleanupResult> {
+export async function hardDeleteImportBatch(
+  context: ActorContext,
+  importBatchId: string,
+  options: { bootstrapOverride?: boolean } = {},
+): Promise<CleanupResult> {
   const scope = await importBatchScope(context, importBatchId);
-  await assertCanHardDelete(context, {
+  const diagnosticScope = {
     moduleIds: scope.moduleIds,
     programmeVersionIds: scope.programmeVersionIds,
     evidenceIds: scope.evidenceIds,
-  });
+  };
+  const diagnostics = await cleanupDiagnosticsForScope(context, diagnosticScope);
+
+  if (!options.bootstrapOverride) {
+    await assertCanHardDelete(context, diagnosticScope);
+  }
 
   await db.transaction(async (tx) => {
     const allSourceIds = [...scope.sourceRecordIds, ...scope.sourceModuleIds, ...scope.sourceProgrammeIds, ...scope.sourceStructureItemIds];
+    if (options.bootstrapOverride) {
+      const claimConditions = [];
+      if (scope.moduleIds.length) claimConditions.push(inArray(aiClaimsTable.moduleId, scope.moduleIds));
+      if (scope.programmeVersionIds.length) claimConditions.push(inArray(aiClaimsTable.programmeVersionId, scope.programmeVersionIds));
+
+      const scopedClaims = claimConditions.length
+        ? await tx
+            .select({ id: aiClaimsTable.id, analysisRunId: aiClaimsTable.analysisRunId })
+            .from(aiClaimsTable)
+            .where(and(eq(aiClaimsTable.institutionId, context.institutionId), or(...claimConditions)))
+        : [];
+      const scopedClaimIds = ids(scopedClaims);
+      const scopedAnalysisRunIds = [...new Set(scopedClaims.map((claim) => claim.analysisRunId).filter((id): id is string => Boolean(id)))];
+      const reviewCycles = scope.programmeVersionIds.length
+        ? await tx
+            .select({ id: reviewCyclesTable.id })
+            .from(reviewCyclesTable)
+            .where(and(eq(reviewCyclesTable.institutionId, context.institutionId), inArray(reviewCyclesTable.programmeVersionId, scope.programmeVersionIds)))
+        : [];
+      const reviewCycleIds = ids(reviewCycles);
+      const actionPlanConditions = [];
+      if (scope.programmeVersionIds.length) actionPlanConditions.push(inArray(actionPlansTable.programmeVersionId, scope.programmeVersionIds));
+      if (reviewCycleIds.length) actionPlanConditions.push(inArray(actionPlansTable.reviewCycleId, reviewCycleIds));
+      const swotConditions = [];
+      if (scope.programmeVersionIds.length) swotConditions.push(inArray(swotItemsTable.programmeVersionId, scope.programmeVersionIds));
+      if (reviewCycleIds.length) swotConditions.push(inArray(swotItemsTable.reviewCycleId, reviewCycleIds));
+      const readinessConditions = [];
+      if (scope.programmeVersionIds.length) readinessConditions.push(inArray(readinessAssessmentsTable.programmeVersionId, scope.programmeVersionIds));
+      if (reviewCycleIds.length) readinessConditions.push(inArray(readinessAssessmentsTable.reviewCycleId, reviewCycleIds));
+
+      if (actionPlanConditions.length) {
+        await tx.delete(actionPlansTable).where(and(eq(actionPlansTable.institutionId, context.institutionId), or(...actionPlanConditions)));
+      }
+      if (swotConditions.length) {
+        await tx.delete(swotItemsTable).where(and(eq(swotItemsTable.institutionId, context.institutionId), or(...swotConditions)));
+      }
+      if (readinessConditions.length) {
+        await tx.delete(readinessAssessmentsTable).where(and(eq(readinessAssessmentsTable.institutionId, context.institutionId), or(...readinessConditions)));
+      }
+      if (reviewCycleIds.length) await tx.delete(reviewCyclesTable).where(inArray(reviewCyclesTable.id, reviewCycleIds));
+      if (scopedClaimIds.length) await tx.delete(aiClaimsTable).where(inArray(aiClaimsTable.id, scopedClaimIds));
+      if (scopedAnalysisRunIds.length) await tx.delete(analysisRunsTable).where(inArray(analysisRunsTable.id, scopedAnalysisRunIds));
+    }
+
     if (scope.evidenceIds.length) await tx.delete(dataQualityResultLinksTable).where(inArray(dataQualityResultLinksTable.evidenceItemId, scope.evidenceIds));
     if (scope.moduleIds.length) await tx.delete(dataQualityResultLinksTable).where(inArray(dataQualityResultLinksTable.moduleId, scope.moduleIds));
     if (scope.descriptorIds.length) await tx.delete(dataQualityResultLinksTable).where(inArray(dataQualityResultLinksTable.moduleDescriptorId, scope.descriptorIds));
@@ -369,7 +576,15 @@ export async function hardDeleteImportBatch(context: ActorContext, importBatchId
       sourceModules: scope.sourceModuleIds.length,
       sourceProgrammes: scope.sourceProgrammeIds.length,
       evidenceItems: scope.evidenceIds.length,
+      claims: diagnostics.claims,
+      humanReviews: diagnostics.humanReviews,
+      findings: diagnostics.findings,
+      readinessAssessments: diagnostics.readinessAssessments,
+      swotItems: diagnostics.swotItems,
+      actionPlans: diagnostics.actionPlans,
     },
+    diagnostics,
+    bootstrapOverride: options.bootstrapOverride === true,
   };
 }
 

@@ -1,11 +1,12 @@
-import { useEffect, useMemo, useState } from "react";
+import { type ReactNode, useEffect, useMemo, useState } from "react";
 import { Link } from "wouter";
-import { Archive, ArrowRight, BookOpen, Database, Filter, Search, SlidersHorizontal, Trash2 } from "lucide-react";
+import { AlertTriangle, Archive, ArrowRight, BookOpen, Database, Filter, Search, SlidersHorizontal, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { useAuth } from "@/lib/auth";
 
 type ModuleLibraryItem = {
   id: string;
@@ -34,6 +35,25 @@ type ModuleLibraryResponse = {
   total: number;
 };
 
+type CleanupDiagnostics = {
+  claims: number;
+  humanReviews: number;
+  acceptedFindings: number;
+  amendedFindings: number;
+  findings: number;
+  clarificationRequests: number;
+  analysisRuns: number;
+  reviewCycles: number;
+  readinessAssessments: number;
+  readinessItems: number;
+  swotItems: number;
+  actionPlans: number;
+  actionPlanItems: number;
+  actionPlanReferences: number;
+  blockedReasons: string[];
+  canHardDelete: boolean;
+};
+
 type ImportBatchSummary = {
   id: string;
   label: string;
@@ -48,11 +68,12 @@ type ImportBatchSummary = {
     programmeVersions: number;
     structureItems: number;
   };
+  cleanupDiagnostics?: CleanupDiagnostics;
 };
 
 type CleanupConfirmation = {
   title: string;
-  message: string;
+  message: ReactNode;
   confirmLabel: string;
   action: () => Promise<void>;
 };
@@ -96,7 +117,41 @@ function statusBadgeClass(status: string) {
   return "bg-slate-50 text-slate-600 border-slate-200";
 }
 
+function hasProtectedCleanupRecords(diagnostics?: CleanupDiagnostics) {
+  if (!diagnostics) return false;
+  return (
+    diagnostics.claims > 0 ||
+    diagnostics.humanReviews > 0 ||
+    diagnostics.findings > 0 ||
+    diagnostics.clarificationRequests > 0 ||
+    diagnostics.reviewCycles > 0 ||
+    diagnostics.readinessAssessments > 0 ||
+    diagnostics.readinessItems > 0 ||
+    diagnostics.swotItems > 0 ||
+    diagnostics.actionPlans > 0 ||
+    diagnostics.actionPlanItems > 0 ||
+    diagnostics.actionPlanReferences > 0
+  );
+}
+
+function cleanupDiagnosticRows(diagnostics: CleanupDiagnostics) {
+  return [
+    ["Claims", diagnostics.claims],
+    ["Accepted findings", diagnostics.acceptedFindings],
+    ["Amended findings", diagnostics.amendedFindings],
+    ["Human review records", diagnostics.humanReviews],
+    ["Clarification requests", diagnostics.clarificationRequests],
+    ["Readiness assessments", diagnostics.readinessAssessments],
+    ["Readiness items", diagnostics.readinessItems],
+    ["SWOT items", diagnostics.swotItems],
+    ["Action plans", diagnostics.actionPlans],
+    ["Action items", diagnostics.actionPlanItems],
+    ["Action plan references", diagnostics.actionPlanReferences],
+  ].filter(([, count]) => Number(count) > 0) as Array<[string, number]>;
+}
+
 export default function ModuleLibrary() {
+  const { canBootstrapOverrideDelete } = useAuth();
   const [modules, setModules] = useState<ModuleLibraryItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -148,6 +203,49 @@ export default function ModuleLibrary() {
     setCleanupMessage(success);
     await loadModules();
     await loadImportBatches();
+  }
+
+  function confirmBatchDelete(batch: ImportBatchSummary) {
+    const diagnostics = batch.cleanupDiagnostics;
+    const protectedRecords = hasProtectedCleanupRecords(diagnostics);
+    const canOverride = protectedRecords && canBootstrapOverrideDelete;
+    setConfirmation({
+      title: canOverride ? "Bootstrap administrator override delete?" : "Delete test upload?",
+      message: canOverride && diagnostics ? (
+        <div className="space-y-4">
+          <div className="flex gap-3 rounded border border-rose-200 bg-rose-50 p-3 text-rose-800">
+            <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0" />
+            <div>
+              <div className="font-semibold">This action permanently removes reviewed curriculum records.</div>
+              <div className="mt-1">Bootstrap administrator override should only be used for acceptance testing or seed-data cleanup.</div>
+            </div>
+          </div>
+          <div>
+            <div className="font-medium text-slate-800">This upload contains:</div>
+            <ul className="mt-2 list-disc space-y-1 pl-5">
+              {cleanupDiagnosticRows(diagnostics).map(([label, count]) => (
+                <li key={label}>
+                  {count.toLocaleString()} {label.toLowerCase()}
+                </li>
+              ))}
+            </ul>
+          </div>
+          <p>
+            Bootstrap administrator override will permanently remove these records, along with uploaded modules,
+            draft programme structures, descriptor evidence and source rows for this upload. This action cannot be undone.
+          </p>
+        </div>
+      ) : (
+        "This permanently removes uploaded test modules, draft programme structures, descriptor evidence and source rows for this upload only. It will be blocked if reviewed findings, human reviews or action-plan links exist."
+      ),
+      confirmLabel: canOverride ? "Override and permanently delete" : "Delete test upload",
+      action: () =>
+        cleanupRequest(
+          `/api/cleanup/import-batches/${batch.id}${canOverride ? "?bootstrapOverride=true" : ""}`,
+          { method: "DELETE" },
+          canOverride ? "Bootstrap override delete completed." : "Test upload deleted.",
+        ),
+    });
   }
 
   const filterOptions = useMemo(() => {
@@ -307,12 +405,7 @@ export default function ModuleLibrary() {
                       size="sm"
                       variant="outline"
                       className="border-rose-200 text-rose-700 hover:bg-rose-50"
-                      onClick={() => setConfirmation({
-                        title: "Delete test upload?",
-                        message: "This permanently removes uploaded test modules, draft programme structures, descriptor evidence and source rows for this upload only. It will be blocked if reviewed findings, human reviews or action-plan links exist.",
-                        confirmLabel: "Delete test upload",
-                        action: () => cleanupRequest(`/api/cleanup/import-batches/${batch.id}`, { method: "DELETE" }, "Test upload deleted."),
-                      })}
+                      onClick={() => confirmBatchDelete(batch)}
                     >
                       <Trash2 className="mr-2 h-4 w-4" />Delete
                     </Button>
@@ -439,7 +532,7 @@ export default function ModuleLibrary() {
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/40 p-4">
           <div className="w-full max-w-md rounded bg-white p-5 shadow-xl">
             <h2 className="text-lg font-semibold text-slate-950">{confirmation.title}</h2>
-            <p className="mt-2 text-sm leading-6 text-slate-600">{confirmation.message}</p>
+            <div className="mt-2 text-sm leading-6 text-slate-600">{confirmation.message}</div>
             <div className="mt-5 flex flex-wrap justify-end gap-2">
               <Button variant="outline" onClick={() => setConfirmation(null)}>Cancel</Button>
               <Button

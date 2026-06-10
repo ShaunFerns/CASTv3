@@ -154,6 +154,29 @@ function mergePermissions(roleRows: RoleRow[]): CanonicalPermission[] {
   return [...permissions].sort();
 }
 
+function isBootstrapAdminUser(user: User): boolean {
+  const metadata = user.metadata;
+  const metadataBootstrap =
+    metadata !== null &&
+    typeof metadata === "object" &&
+    !Array.isArray(metadata) &&
+    (metadata as Record<string, unknown>)["bootstrapAdmin"] === true;
+
+  return metadataBootstrap || user.externalSubject === "bootstrap-admin";
+}
+
+function isBootstrapAdminSession(req: Request, user: User): boolean {
+  return req.session.authStrategy === "bootstrap_admin" && isBootstrapAdminUser(user);
+}
+
+function withSessionScopedPermissions(req: Request, user: User, permissions: CanonicalPermission[]): CanonicalPermission[] {
+  const resolved = new Set(permissions);
+  if (isBootstrapAdminSession(req, user)) {
+    resolved.add("cleanup.bootstrap_override_delete");
+  }
+  return [...resolved].sort();
+}
+
 async function loadRoleRows(membershipIds: string[]): Promise<RoleRow[]> {
   if (membershipIds.length === 0) return [];
 
@@ -213,7 +236,7 @@ export function resolveCurrentUser(): RequestHandler {
       user,
       memberships,
       roleKeys: [...new Set(roleRows.map((role) => role.key))].sort(),
-      effectivePermissions: mergePermissions(roleRows),
+      effectivePermissions: withSessionScopedPermissions(req, user, mergePermissions(roleRows)),
     };
 
     next();
@@ -251,7 +274,7 @@ export function requireInstitutionContext(): RequestHandler {
       selectedInstitutionId: membership.institutionId,
       institutionMembership: membership,
       roleKeys: [...new Set(roleRows.map((role) => role.key))].sort(),
-      effectivePermissions: mergePermissions(roleRows),
+      effectivePermissions: withSessionScopedPermissions(req, req.cast.user, mergePermissions(roleRows)),
     };
     req.session.selectedInstitutionId = membership.institutionId;
 
@@ -261,6 +284,15 @@ export function requireInstitutionContext(): RequestHandler {
 
 export function hasPermission(context: Pick<CastRequestContext, "effectivePermissions">, permission: CanonicalPermission): boolean {
   return context.effectivePermissions.includes(permission) || context.effectivePermissions.includes("platform.admin");
+}
+
+export function hasBootstrapDeleteOverride(req: Request): boolean {
+  return Boolean(
+    req.cast &&
+      req.session.authStrategy === "bootstrap_admin" &&
+      isBootstrapAdminUser(req.cast.user) &&
+      req.cast.effectivePermissions.includes("cleanup.bootstrap_override_delete"),
+  );
 }
 
 export function requirePermission(permission: CanonicalPermission): RequestHandler {

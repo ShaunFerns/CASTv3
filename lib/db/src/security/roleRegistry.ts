@@ -27,6 +27,7 @@ export const canonicalPermissions = [
   "action_plan.write",
   "data_quality.read",
   "data_quality.manage",
+  "cleanup.bootstrap_override_delete",
   "worker.read",
   "worker.manage",
   "audit.read",
