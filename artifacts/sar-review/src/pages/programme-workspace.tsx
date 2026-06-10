@@ -222,6 +222,62 @@ type ReadinessAssessmentItem = {
   status: string;
 };
 
+type SwotItem = {
+  id: string;
+  title: string;
+  description?: string | null;
+  rationale?: string | null;
+  itemType: "strength" | "weakness" | "opportunity" | "threat";
+  categoryLabel?: string;
+  status: string;
+  createdAt?: string | null;
+  traceability?: {
+    evidenceCount: number;
+    claimCount: number;
+    findingCount: number;
+    readinessCount: number;
+    reviewNoteCount: number;
+  };
+};
+
+type ActionItem = {
+  id: string;
+  title: string;
+  description?: string | null;
+  priority: "low" | "medium" | "high" | "critical";
+  displayStatus: "proposed" | "approved" | "in_progress" | "completed" | "closed";
+  displayStatusLabel: string;
+  ownerName?: string;
+  dueAt?: string | null;
+  progressNotes?: string;
+  createdAt?: string | null;
+  traceability?: {
+    swotCount: number;
+    readinessCount: number;
+    claimCount: number;
+    findingCount: number;
+    evidenceCount: number;
+    reviewNoteCount: number;
+  };
+};
+
+type ActionMonitoring = {
+  totalActions: number;
+  openActions: number;
+  overdueActions: number;
+  completedActions: number;
+  byPriority: Record<string, number>;
+  byStatus: Record<string, number>;
+  byOwner: Record<string, number>;
+  recentActivity: ActionItem[];
+};
+
+type ReviewContextOptions = {
+  reviewCycles: ReviewCycle[];
+  reviewNotes: ReviewNote[];
+  readinessItems: Array<{ id: string; title: string; criterionKey: string; rating: string }>;
+};
+
 async function api<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await fetch(path, {
     credentials: "include",
@@ -339,6 +395,30 @@ export default function ProgrammeWorkspace() {
   });
   const [participantForm, setParticipantForm] = useState({ name: "", role: "Programme Chair", comments: "" });
   const [noteForm, setNoteForm] = useState({ title: "", noteType: "observation", body: "" });
+  const [swotItems, setSwotItems] = useState<SwotItem[]>([]);
+  const [actionItems, setActionItems] = useState<ActionItem[]>([]);
+  const [actionMonitoring, setActionMonitoring] = useState<ActionMonitoring | null>(null);
+  const [reviewContextOptions, setReviewContextOptions] = useState<ReviewContextOptions>({ reviewCycles: [], reviewNotes: [], readinessItems: [] });
+  const [swotForm, setSwotForm] = useState({
+    title: "",
+    description: "",
+    category: "strength",
+    rationale: "",
+    readinessAssessmentItemId: "",
+    reviewNoteId: "",
+  });
+  const [actionForm, setActionForm] = useState({
+    title: "",
+    description: "",
+    owner: "",
+    priority: "medium",
+    status: "proposed",
+    targetDate: "",
+    progressNotes: "",
+    swotItemId: "",
+    readinessAssessmentItemId: "",
+    reviewNoteId: "",
+  });
 
   const selectedProgramme = useMemo(
     () => programmeVersions.find((programme) => programme.id === selectedProgrammeId),
@@ -376,11 +456,18 @@ export default function ProgrammeWorkspace() {
       setReadinessSummary(null);
       setReadinessAssessments([]);
       setReadinessItems([]);
+      setSwotItems([]);
+      setActionItems([]);
+      setActionMonitoring(null);
+      setReviewContextOptions({ reviewCycles: [], reviewNotes: [], readinessItems: [] });
       return;
     }
     void loadOverview();
     void loadReviewCycles();
     void loadReadiness();
+    void loadSwot();
+    void loadActions();
+    void loadReviewContextOptions();
   }, [selectedProgrammeId]);
 
   async function createProgramme() {
@@ -590,6 +677,107 @@ export default function ProgrammeWorkspace() {
     savePayload(result.filename, result.contentType, result.payload);
   }
 
+  async function loadReviewContextOptions(reviewCycleId = selectedReviewCycleId) {
+    if (!selectedProgrammeId) return;
+    const query = reviewCycleId ? `?reviewCycleId=${encodeURIComponent(reviewCycleId)}` : "";
+    setReviewContextOptions(await api<ReviewContextOptions>(`/api/programme-workspace/programme-versions/${selectedProgrammeId}/review-context-options${query}`));
+  }
+
+  async function loadSwot(reviewCycleId = selectedReviewCycleId) {
+    if (!selectedProgrammeId) return;
+    const query = reviewCycleId ? `?reviewCycleId=${encodeURIComponent(reviewCycleId)}` : "";
+    const result = await api<{ swotItems: SwotItem[] }>(`/api/programme-workspace/programme-versions/${selectedProgrammeId}/swot${query}`);
+    setSwotItems(result.swotItems);
+  }
+
+  async function createSwot() {
+    if (!selectedProgrammeId || !selectedReviewCycleId || !swotForm.title.trim()) return;
+    const body = {
+      programmeVersionId: selectedProgrammeId,
+      reviewCycleId: selectedReviewCycleId,
+      title: swotForm.title,
+      description: swotForm.description,
+      category: swotForm.category,
+      rationale: swotForm.rationale,
+      readinessAssessmentItemIds: swotForm.readinessAssessmentItemId ? [swotForm.readinessAssessmentItemId] : [],
+      reviewNoteIds: swotForm.reviewNoteId ? [swotForm.reviewNoteId] : [],
+    };
+    await api<{ swotItem: SwotItem }>("/api/programme-workspace/swot", { method: "POST", body: JSON.stringify(body) });
+    setSwotForm({ title: "", description: "", category: "strength", rationale: "", readinessAssessmentItemId: "", reviewNoteId: "" });
+    await loadSwot();
+    await loadActions();
+    setState({ loading: false, message: "SWOT item captured." });
+  }
+
+  async function updateSwotStatus(swotItemId: string, status: "draft" | "reviewed" | "approved" | "archived") {
+    await api(`/api/programme-workspace/swot/${swotItemId}`, { method: "PATCH", body: JSON.stringify({ status }) });
+    await loadSwot();
+  }
+
+  async function exportSwot(format: "json" | "csv") {
+    if (!selectedProgrammeId || !selectedReviewCycleId) return;
+    const result = await api<{ filename: string; contentType: string; payload: string }>(`/api/programme-workspace/programme-versions/${selectedProgrammeId}/swot/export`, {
+      method: "POST",
+      body: JSON.stringify({ reviewCycleId: selectedReviewCycleId, format }),
+    });
+    savePayload(result.filename, result.contentType, result.payload);
+  }
+
+  async function loadActions(reviewCycleId = selectedReviewCycleId) {
+    if (!selectedProgrammeId) return;
+    const query = reviewCycleId ? `?reviewCycleId=${encodeURIComponent(reviewCycleId)}` : "";
+    const result = await api<{ actionItems: ActionItem[]; monitoring: ActionMonitoring }>(`/api/programme-workspace/programme-versions/${selectedProgrammeId}/actions${query}`);
+    setActionItems(result.actionItems);
+    setActionMonitoring(result.monitoring);
+  }
+
+  async function createAction() {
+    if (!selectedProgrammeId || !selectedReviewCycleId || !actionForm.title.trim()) return;
+    const body = {
+      programmeVersionId: selectedProgrammeId,
+      reviewCycleId: selectedReviewCycleId,
+      title: actionForm.title,
+      description: actionForm.description,
+      owner: actionForm.owner,
+      priority: actionForm.priority,
+      status: actionForm.status,
+      targetDate: actionForm.targetDate,
+      progressNotes: actionForm.progressNotes,
+      swotItemIds: actionForm.swotItemId ? [actionForm.swotItemId] : [],
+      readinessAssessmentItemIds: actionForm.readinessAssessmentItemId ? [actionForm.readinessAssessmentItemId] : [],
+      reviewNoteIds: actionForm.reviewNoteId ? [actionForm.reviewNoteId] : [],
+    };
+    await api("/api/programme-workspace/actions", { method: "POST", body: JSON.stringify(body) });
+    setActionForm({
+      title: "",
+      description: "",
+      owner: "",
+      priority: "medium",
+      status: "proposed",
+      targetDate: "",
+      progressNotes: "",
+      swotItemId: "",
+      readinessAssessmentItemId: "",
+      reviewNoteId: "",
+    });
+    await loadActions();
+    setState({ loading: false, message: "Enhancement action created." });
+  }
+
+  async function updateActionStatus(actionItemId: string, status: "proposed" | "approved" | "in_progress" | "completed" | "closed") {
+    await api(`/api/programme-workspace/actions/${actionItemId}`, { method: "PATCH", body: JSON.stringify({ status }) });
+    await loadActions();
+  }
+
+  async function exportActions(format: "json" | "csv") {
+    if (!selectedProgrammeId || !selectedReviewCycleId) return;
+    const result = await api<{ filename: string; contentType: string; payload: string }>(`/api/programme-workspace/programme-versions/${selectedProgrammeId}/actions/export`, {
+      method: "POST",
+      body: JSON.stringify({ reviewCycleId: selectedReviewCycleId, format }),
+    });
+    savePayload(result.filename, result.contentType, result.payload);
+  }
+
   async function runQuality() {
     if (!selectedProgrammeId) return;
     setQuality(await api(`/api/programme-workspace/programme-versions/${selectedProgrammeId}/data-quality`, { method: "POST" }));
@@ -681,6 +869,8 @@ export default function ProgrammeWorkspace() {
           <TabsTrigger value="comparison"><GitCompareArrows className="mr-2 h-4 w-4" />Comparison</TabsTrigger>
           <TabsTrigger value="review-cycles"><ClipboardCheck className="mr-2 h-4 w-4" />Review Cycles</TabsTrigger>
           <TabsTrigger value="readiness"><Gauge className="mr-2 h-4 w-4" />Readiness</TabsTrigger>
+          <TabsTrigger value="swot"><ListChecks className="mr-2 h-4 w-4" />SWOT</TabsTrigger>
+          <TabsTrigger value="actions"><ShieldCheck className="mr-2 h-4 w-4" />Action Planning</TabsTrigger>
           <TabsTrigger value="quality"><ListChecks className="mr-2 h-4 w-4" />Quality</TabsTrigger>
           <TabsTrigger value="map"><Map className="mr-2 h-4 w-4" />Map preview</TabsTrigger>
         </TabsList>
@@ -1382,6 +1572,338 @@ export default function ProgrammeWorkspace() {
                     </div>
                   );
                 })}
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="swot">
+          <div className="grid gap-4 xl:grid-cols-[420px_1fr]">
+            <Card>
+              <CardHeader>
+                <CardTitle>Capture SWOT Item</CardTitle>
+                <p className="text-sm text-slate-600">Record strengths, weaknesses, opportunities or threats arising from review findings, readiness observations and review discussion.</p>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="space-y-2">
+                  <Label>Review cycle</Label>
+                  <Select value={selectedReviewCycleId || "__none"} onValueChange={(value) => {
+                    const next = value === "__none" ? "" : value;
+                    setSelectedReviewCycleId(next);
+                    if (next) void loadReviewCycleDetail(next);
+                    void loadReviewContextOptions(next);
+                    void loadSwot(next);
+                    void loadActions(next);
+                  }}>
+                    <SelectTrigger><SelectValue placeholder="Select review cycle" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none">Select review cycle</SelectItem>
+                      {reviewCycles.map((cycle) => <SelectItem key={cycle.id} value={cycle.id}>{cycle.title}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Category</Label>
+                  <Select value={swotForm.category} onValueChange={(category) => setSwotForm((current) => ({ ...current, category }))}>
+                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="strength">Strength</SelectItem>
+                      <SelectItem value="weakness">Weakness</SelectItem>
+                      <SelectItem value="opportunity">Opportunity</SelectItem>
+                      <SelectItem value="threat">Threat</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Title</Label>
+                  <Input value={swotForm.title} onChange={(event) => setSwotForm((current) => ({ ...current, title: event.target.value }))} placeholder="e.g. Strong evidence of applied sustainability learning" />
+                </div>
+                <div className="space-y-2">
+                  <Label>Description</Label>
+                  <textarea
+                    className="min-h-24 w-full rounded-md border border-slate-200 px-3 py-2 text-sm shadow-sm outline-none focus:border-blue-500"
+                    value={swotForm.description}
+                    onChange={(event) => setSwotForm((current) => ({ ...current, description: event.target.value }))}
+                    placeholder="Summarise the programme-level issue or strength"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Rationale</Label>
+                  <Input value={swotForm.rationale} onChange={(event) => setSwotForm((current) => ({ ...current, rationale: event.target.value }))} placeholder="Why this matters for programme enhancement" />
+                </div>
+                <div className="space-y-2">
+                  <Label>Readiness observation</Label>
+                  <Select value={swotForm.readinessAssessmentItemId || "__none"} onValueChange={(value) => setSwotForm((current) => ({ ...current, readinessAssessmentItemId: value === "__none" ? "" : value }))}>
+                    <SelectTrigger><SelectValue placeholder="Optional readiness link" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none">No readiness link</SelectItem>
+                      {reviewContextOptions.readinessItems.map((item) => <SelectItem key={item.id} value={item.id}>{item.title} - {statusLabel(item.rating)}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-2">
+                  <Label>Review note</Label>
+                  <Select value={swotForm.reviewNoteId || "__none"} onValueChange={(value) => setSwotForm((current) => ({ ...current, reviewNoteId: value === "__none" ? "" : value }))}>
+                    <SelectTrigger><SelectValue placeholder="Optional review note link" /></SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__none">No review note link</SelectItem>
+                      {reviewContextOptions.reviewNotes.map((note) => <SelectItem key={note.id} value={note.id}>{note.title || note.body.slice(0, 50)}</SelectItem>)}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <Button onClick={createSwot} disabled={!selectedReviewCycleId || !swotForm.title.trim()}>
+                  <ListChecks className="mr-2 h-4 w-4" />
+                  Add SWOT item
+                </Button>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <CardTitle>SWOT Summary</CardTitle>
+                  <p className="mt-1 text-sm text-slate-600">Traceable enhancement themes arising from findings, readiness and review discussion.</p>
+                </div>
+                <div className="flex flex-wrap gap-2">
+                  <Button variant="outline" onClick={() => { void loadReviewContextOptions(); void loadSwot(); }} disabled={!selectedProgrammeId}><RefreshCw className="mr-2 h-4 w-4" />Refresh</Button>
+                  <Button variant="outline" onClick={() => exportSwot("json")} disabled={!selectedReviewCycleId}><Download className="mr-2 h-4 w-4" />JSON</Button>
+                  <Button variant="outline" onClick={() => exportSwot("csv")} disabled={!selectedReviewCycleId}><Download className="mr-2 h-4 w-4" />CSV</Button>
+                </div>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {swotItems.length === 0 && <p className="text-sm text-slate-500">No SWOT items have been captured for this programme context yet.</p>}
+                {(["strength", "weakness", "opportunity", "threat"] as const).map((category) => {
+                  const itemsForCategory = swotItems.filter((item) => item.itemType === category);
+                  return (
+                    <div key={category} className="rounded border border-slate-200 p-3">
+                      <div className="mb-2 flex items-center justify-between">
+                        <h3 className="font-semibold text-slate-950">{category[0].toUpperCase() + category.slice(1)}</h3>
+                        <Badge variant="outline">{itemsForCategory.length}</Badge>
+                      </div>
+                      <div className="space-y-2">
+                        {itemsForCategory.length === 0 && <p className="text-sm text-slate-500">None recorded.</p>}
+                        {itemsForCategory.map((item) => (
+                          <div key={item.id} className="rounded bg-slate-50 px-3 py-2 text-sm">
+                            <div className="flex flex-wrap items-center justify-between gap-2">
+                              <div className="font-medium text-slate-950">{item.title}</div>
+                              <div className="flex flex-wrap gap-2">
+                                <Badge variant="outline">{statusLabel(item.status)}</Badge>
+                                <Button variant="outline" size="sm" onClick={() => updateSwotStatus(item.id, "reviewed")}>Reviewed</Button>
+                                <Button variant="outline" size="sm" onClick={() => updateSwotStatus(item.id, "approved")}>Approve</Button>
+                              </div>
+                            </div>
+                            {item.description && <p className="mt-1 text-slate-600">{item.description}</p>}
+                            <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                              <Badge variant="secondary">Evidence {item.traceability?.evidenceCount ?? 0}</Badge>
+                              <Badge variant="secondary">Claims {item.traceability?.claimCount ?? 0}</Badge>
+                              <Badge variant="secondary">Findings {item.traceability?.findingCount ?? 0}</Badge>
+                              <Badge variant="secondary">Readiness {item.traceability?.readinessCount ?? 0}</Badge>
+                              <Badge variant="secondary">Notes {item.traceability?.reviewNoteCount ?? 0}</Badge>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </CardContent>
+            </Card>
+          </div>
+        </TabsContent>
+
+        <TabsContent value="actions">
+          <div className="space-y-4">
+            <div className="grid gap-4 xl:grid-cols-[420px_1fr]">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Create Enhancement Action</CardTitle>
+                  <p className="text-sm text-slate-600">Convert findings, SWOT themes and readiness gaps into programme enhancement actions.</p>
+                </CardHeader>
+                <CardContent className="space-y-3">
+                  <div className="space-y-2">
+                    <Label>Review cycle</Label>
+                  <Select value={selectedReviewCycleId || "__none"} onValueChange={(value) => {
+                    const next = value === "__none" ? "" : value;
+                    setSelectedReviewCycleId(next);
+                    if (next) void loadReviewCycleDetail(next);
+                    void loadReviewContextOptions(next);
+                    void loadSwot(next);
+                    void loadActions(next);
+                  }}>
+                      <SelectTrigger><SelectValue placeholder="Select review cycle" /></SelectTrigger>
+                    <SelectContent>
+                        <SelectItem value="__none">Select review cycle</SelectItem>
+                        {reviewCycles.map((cycle) => <SelectItem key={cycle.id} value={cycle.id}>{cycle.title}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Title</Label>
+                    <Input value={actionForm.title} onChange={(event) => setActionForm((current) => ({ ...current, title: event.target.value }))} placeholder="e.g. Strengthen assessment evidence in Stage 2" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Description</Label>
+                    <textarea
+                      className="min-h-24 w-full rounded-md border border-slate-200 px-3 py-2 text-sm shadow-sm outline-none focus:border-blue-500"
+                      value={actionForm.description}
+                      onChange={(event) => setActionForm((current) => ({ ...current, description: event.target.value }))}
+                      placeholder="What will the programme team improve or clarify?"
+                    />
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label>Owner</Label>
+                      <Input value={actionForm.owner} onChange={(event) => setActionForm((current) => ({ ...current, owner: event.target.value }))} placeholder="Named owner or team" />
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Target date</Label>
+                      <Input type="date" value={actionForm.targetDate} onChange={(event) => setActionForm((current) => ({ ...current, targetDate: event.target.value }))} />
+                    </div>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="space-y-2">
+                      <Label>Priority</Label>
+                      <Select value={actionForm.priority} onValueChange={(priority) => setActionForm((current) => ({ ...current, priority }))}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="low">Low</SelectItem>
+                          <SelectItem value="medium">Medium</SelectItem>
+                          <SelectItem value="high">High</SelectItem>
+                          <SelectItem value="critical">Critical</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="space-y-2">
+                      <Label>Status</Label>
+                      <Select value={actionForm.status} onValueChange={(status) => setActionForm((current) => ({ ...current, status }))}>
+                        <SelectTrigger><SelectValue /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="proposed">Proposed</SelectItem>
+                          <SelectItem value="approved">Approved</SelectItem>
+                          <SelectItem value="in_progress">In Progress</SelectItem>
+                          <SelectItem value="completed">Completed</SelectItem>
+                          <SelectItem value="closed">Closed</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Link to SWOT</Label>
+                    <Select value={actionForm.swotItemId || "__none"} onValueChange={(value) => setActionForm((current) => ({ ...current, swotItemId: value === "__none" ? "" : value }))}>
+                      <SelectTrigger><SelectValue placeholder="Optional SWOT link" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none">No SWOT link</SelectItem>
+                        {swotItems.map((item) => <SelectItem key={item.id} value={item.id}>{item.categoryLabel ?? item.itemType}: {item.title}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Link to readiness observation</Label>
+                    <Select value={actionForm.readinessAssessmentItemId || "__none"} onValueChange={(value) => setActionForm((current) => ({ ...current, readinessAssessmentItemId: value === "__none" ? "" : value }))}>
+                      <SelectTrigger><SelectValue placeholder="Optional readiness link" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__none">No readiness link</SelectItem>
+                        {reviewContextOptions.readinessItems.map((item) => <SelectItem key={item.id} value={item.id}>{item.title} - {statusLabel(item.rating)}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label>Progress notes</Label>
+                    <Input value={actionForm.progressNotes} onChange={(event) => setActionForm((current) => ({ ...current, progressNotes: event.target.value }))} placeholder="Initial note or success indicator" />
+                  </div>
+                  <Button onClick={createAction} disabled={!selectedReviewCycleId || !actionForm.title.trim()}>
+                    <ShieldCheck className="mr-2 h-4 w-4" />
+                    Create action
+                  </Button>
+                </CardContent>
+              </Card>
+
+              <Card>
+                <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                  <div>
+                    <CardTitle>Action Monitoring</CardTitle>
+                    <p className="mt-1 text-sm text-slate-600">A programme enhancement view of open, overdue and completed actions.</p>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    <Button variant="outline" onClick={() => loadActions()} disabled={!selectedProgrammeId}><RefreshCw className="mr-2 h-4 w-4" />Refresh</Button>
+                    <Button variant="outline" onClick={() => exportActions("json")} disabled={!selectedReviewCycleId}><Download className="mr-2 h-4 w-4" />JSON</Button>
+                    <Button variant="outline" onClick={() => exportActions("csv")} disabled={!selectedReviewCycleId}><Download className="mr-2 h-4 w-4" />CSV</Button>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+                    {[
+                      ["Total actions", actionMonitoring?.totalActions ?? 0],
+                      ["Open actions", actionMonitoring?.openActions ?? 0],
+                      ["Overdue actions", actionMonitoring?.overdueActions ?? 0],
+                      ["Completed", actionMonitoring?.completedActions ?? 0],
+                    ].map(([label, value]) => (
+                      <div key={label} className="rounded border border-slate-200 p-3">
+                        <div className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</div>
+                        <div className="mt-1 text-2xl font-semibold text-slate-950">{value}</div>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="grid gap-4 lg:grid-cols-3">
+                    <div>
+                      <h3 className="mb-2 text-sm font-semibold text-slate-950">By priority</h3>
+                      <div className="space-y-2">
+                        {Object.entries(actionMonitoring?.byPriority ?? {}).map(([key, value]) => <Badge key={key} variant="secondary" className="mr-2">{statusLabel(key)}: {value}</Badge>)}
+                      </div>
+                    </div>
+                    <div>
+                      <h3 className="mb-2 text-sm font-semibold text-slate-950">By status</h3>
+                      <div className="space-y-2">
+                        {Object.entries(actionMonitoring?.byStatus ?? {}).map(([key, value]) => <Badge key={key} variant="secondary" className="mr-2">{statusLabel(key)}: {value}</Badge>)}
+                      </div>
+                    </div>
+                    <div>
+                      <h3 className="mb-2 text-sm font-semibold text-slate-950">By owner</h3>
+                      <div className="space-y-2">
+                        {Object.entries(actionMonitoring?.byOwner ?? {}).slice(0, 5).map(([key, value]) => <Badge key={key} variant="secondary" className="mr-2">{key}: {value}</Badge>)}
+                      </div>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            <Card>
+              <CardHeader><CardTitle>Enhancement Actions</CardTitle></CardHeader>
+              <CardContent className="space-y-3">
+                {actionItems.length === 0 && <p className="text-sm text-slate-500">No enhancement actions have been created for this programme context yet.</p>}
+                {actionItems.map((item) => (
+                  <div key={item.id} className="rounded border border-slate-200 p-3">
+                    <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                      <div>
+                        <div className="flex flex-wrap items-center gap-2">
+                          <h3 className="font-semibold text-slate-950">{item.title}</h3>
+                          <Badge variant="outline">{statusLabel(item.priority)}</Badge>
+                          <Badge variant={item.displayStatus === "completed" ? "outline" : "secondary"}>{item.displayStatusLabel}</Badge>
+                        </div>
+                        {item.description && <p className="mt-1 text-sm text-slate-600">{item.description}</p>}
+                        <div className="mt-2 flex flex-wrap gap-3 text-xs text-slate-500">
+                          <span>Owner: {item.ownerName || "Unassigned"}</span>
+                          <span>Target: {formatDate(item.dueAt)}</span>
+                          {item.progressNotes && <span>Progress: {item.progressNotes}</span>}
+                        </div>
+                        <div className="mt-2 flex flex-wrap gap-2">
+                          <Badge variant="secondary">SWOT {item.traceability?.swotCount ?? 0}</Badge>
+                          <Badge variant="secondary">Findings {item.traceability?.findingCount ?? 0}</Badge>
+                          <Badge variant="secondary">Readiness {item.traceability?.readinessCount ?? 0}</Badge>
+                          <Badge variant="secondary">Evidence {item.traceability?.evidenceCount ?? 0}</Badge>
+                          <Badge variant="secondary">Notes {item.traceability?.reviewNoteCount ?? 0}</Badge>
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Button variant="outline" size="sm" onClick={() => updateActionStatus(item.id, "approved")}>Approve</Button>
+                        <Button variant="outline" size="sm" onClick={() => updateActionStatus(item.id, "in_progress")}>Start</Button>
+                        <Button variant="outline" size="sm" onClick={() => updateActionStatus(item.id, "completed")}>Complete</Button>
+                        <Button variant="outline" size="sm" onClick={() => updateActionStatus(item.id, "closed")}>Close</Button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
               </CardContent>
             </Card>
           </div>

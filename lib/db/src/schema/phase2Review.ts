@@ -636,6 +636,60 @@ export const swotItemPriorityLinksTable = pgTable(
   ],
 );
 
+export const swotItemReadinessLinksTable = pgTable(
+  "swot_item_readiness_links",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    swotItemId: uuid("swot_item_id")
+      .notNull()
+      .references(() => swotItemsTable.id, { onDelete: "cascade" }),
+    readinessAssessmentItemId: uuid("readiness_assessment_item_id")
+      .notNull()
+      .references(() => readinessAssessmentItemsTable.id, {
+        onDelete: "cascade",
+      }),
+    relationship: text("relationship").notNull().default("informs"),
+    notes: text("notes"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("swot_item_readiness_unique").on(
+      table.swotItemId,
+      table.readinessAssessmentItemId,
+    ),
+    index("swot_item_readiness_readiness_idx").on(
+      table.readinessAssessmentItemId,
+    ),
+  ],
+);
+
+export const swotItemReviewNoteLinksTable = pgTable(
+  "swot_item_review_note_links",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    swotItemId: uuid("swot_item_id")
+      .notNull()
+      .references(() => swotItemsTable.id, { onDelete: "cascade" }),
+    reviewNoteId: uuid("review_note_id")
+      .notNull()
+      .references(() => reviewNotesTable.id, { onDelete: "cascade" }),
+    relationship: text("relationship").notNull().default("informs"),
+    notes: text("notes"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("swot_item_review_note_unique").on(
+      table.swotItemId,
+      table.reviewNoteId,
+    ),
+    index("swot_item_review_note_note_idx").on(table.reviewNoteId),
+  ],
+);
+
 export const actionPlansTable = pgTable(
   "action_plans",
   {
@@ -899,6 +953,81 @@ export const actionPlanItemPriorityLinksTable = pgTable(
     index("action_plan_item_priority_priority_idx").on(
       table.institutionPriorityVersionId,
     ),
+  ],
+);
+
+export const actionPlanItemClaimLinksTable = pgTable(
+  "action_plan_item_claim_links",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    actionPlanItemId: uuid("action_plan_item_id")
+      .notNull()
+      .references(() => actionPlanItemsTable.id, { onDelete: "cascade" }),
+    aiClaimId: uuid("ai_claim_id")
+      .notNull()
+      .references(() => aiClaimsTable.id, { onDelete: "cascade" }),
+    relationship: text("relationship").notNull().default("informs"),
+    notes: text("notes"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("action_plan_item_claim_unique").on(
+      table.actionPlanItemId,
+      table.aiClaimId,
+    ),
+    index("action_plan_item_claim_claim_idx").on(table.aiClaimId),
+  ],
+);
+
+export const actionPlanItemHumanReviewLinksTable = pgTable(
+  "action_plan_item_human_review_links",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    actionPlanItemId: uuid("action_plan_item_id")
+      .notNull()
+      .references(() => actionPlanItemsTable.id, { onDelete: "cascade" }),
+    humanReviewId: uuid("human_review_id")
+      .notNull()
+      .references(() => humanReviewsTable.id, { onDelete: "cascade" }),
+    relationship: text("relationship").notNull().default("informs"),
+    notes: text("notes"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("action_plan_item_human_review_unique").on(
+      table.actionPlanItemId,
+      table.humanReviewId,
+    ),
+    index("action_plan_item_human_review_review_idx").on(table.humanReviewId),
+  ],
+);
+
+export const actionPlanItemReviewNoteLinksTable = pgTable(
+  "action_plan_item_review_note_links",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    actionPlanItemId: uuid("action_plan_item_id")
+      .notNull()
+      .references(() => actionPlanItemsTable.id, { onDelete: "cascade" }),
+    reviewNoteId: uuid("review_note_id")
+      .notNull()
+      .references(() => reviewNotesTable.id, { onDelete: "cascade" }),
+    relationship: text("relationship").notNull().default("informs"),
+    notes: text("notes"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    uniqueIndex("action_plan_item_review_note_unique").on(
+      table.actionPlanItemId,
+      table.reviewNoteId,
+    ),
+    index("action_plan_item_review_note_note_idx").on(table.reviewNoteId),
   ],
 );
 

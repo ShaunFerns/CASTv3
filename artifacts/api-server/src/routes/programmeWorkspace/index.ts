@@ -38,6 +38,17 @@ import {
   listReviewCycles,
   updateReviewCycle,
 } from "../../lib/reviewReadiness/service.js";
+import {
+  createActionItem,
+  createSwotItem,
+  exportActionPlan,
+  exportSwotSummary,
+  getReviewContextOptions,
+  listActionPlanning,
+  listSwotItems,
+  updateActionItem,
+  updateSwotItem,
+} from "../../lib/swotActions/service.js";
 
 const router: IRouter = Router();
 
@@ -268,6 +279,150 @@ router.post(
       subjectType: "review_export",
       subjectId: result.reviewExport.id,
       metadata: { reviewCycleId: idParam(req, "reviewCycleId"), format },
+    });
+    res.status(201).json(result);
+  },
+);
+
+router.get(
+  "/programme-workspace/programme-versions/:programmeVersionId/review-context-options",
+  ...protectedWorkspace,
+  requirePermission("programme.read"),
+  async (req, res): Promise<void> => {
+    const reviewCycleId = typeof req.query.reviewCycleId === "string" ? req.query.reviewCycleId : undefined;
+    res.json(await getReviewContextOptions(context(req), idParam(req, "programmeVersionId"), reviewCycleId));
+  },
+);
+
+router.get(
+  "/programme-workspace/programme-versions/:programmeVersionId/swot",
+  ...protectedWorkspace,
+  requirePermission("programme.read"),
+  async (req, res): Promise<void> => {
+    const reviewCycleId = typeof req.query.reviewCycleId === "string" ? req.query.reviewCycleId : undefined;
+    res.json(await listSwotItems(context(req), idParam(req, "programmeVersionId"), reviewCycleId));
+  },
+);
+
+router.post(
+  "/programme-workspace/swot",
+  ...protectedWorkspace,
+  requirePermission("programme.write"),
+  async (req, res): Promise<void> => {
+    const swotItem = await createSwotItem(context(req), req.body);
+    await writeRequestAuditEvent({
+      req,
+      actionType: "swot.item_created",
+      subjectType: "swot_item",
+      subjectId: swotItem.id,
+      metadata: { reviewCycleId: swotItem.reviewCycleId, programmeVersionId: swotItem.programmeVersionId, itemType: swotItem.itemType },
+    });
+    res.status(201).json({ swotItem });
+  },
+);
+
+router.patch(
+  "/programme-workspace/swot/:swotItemId",
+  ...protectedWorkspace,
+  requirePermission("programme.write"),
+  async (req, res): Promise<void> => {
+    const swotItem = await updateSwotItem(context(req), idParam(req, "swotItemId"), req.body);
+    await writeRequestAuditEvent({
+      req,
+      actionType: "swot.item_updated",
+      subjectType: "swot_item",
+      subjectId: swotItem.id,
+      metadata: { status: swotItem.status, itemType: swotItem.itemType },
+    });
+    res.json({ swotItem });
+  },
+);
+
+router.post(
+  "/programme-workspace/programme-versions/:programmeVersionId/swot/export",
+  ...protectedWorkspace,
+  requirePermission("programme.read"),
+  async (req, res): Promise<void> => {
+    const format = req.body?.format === "csv" ? "csv" : "json";
+    const reviewCycleId = String(req.body?.reviewCycleId ?? "");
+    if (!reviewCycleId) {
+      res.status(400).json({ error: "missing_review_cycle", message: "Review cycle is required for export." });
+      return;
+    }
+    const result = await exportSwotSummary(context(req), idParam(req, "programmeVersionId"), reviewCycleId, format);
+    await writeRequestAuditEvent({
+      req,
+      actionType: "swot.summary_exported",
+      subjectType: "review_export",
+      subjectId: result.reviewExport.id,
+      metadata: { reviewCycleId, format },
+    });
+    res.status(201).json(result);
+  },
+);
+
+router.get(
+  "/programme-workspace/programme-versions/:programmeVersionId/actions",
+  ...protectedWorkspace,
+  requirePermission("programme.read"),
+  async (req, res): Promise<void> => {
+    const reviewCycleId = typeof req.query.reviewCycleId === "string" ? req.query.reviewCycleId : undefined;
+    res.json(await listActionPlanning(context(req), idParam(req, "programmeVersionId"), reviewCycleId));
+  },
+);
+
+router.post(
+  "/programme-workspace/actions",
+  ...protectedWorkspace,
+  requirePermission("programme.write"),
+  async (req, res): Promise<void> => {
+    const result = await createActionItem(context(req), req.body);
+    await writeRequestAuditEvent({
+      req,
+      actionType: "action_plan.item_created",
+      subjectType: "action_plan_item",
+      subjectId: result.actionItem.id,
+      metadata: { actionPlanId: result.actionPlan.id, reviewCycleId: result.actionPlan.reviewCycleId, priority: result.actionItem.priority },
+    });
+    res.status(201).json(result);
+  },
+);
+
+router.patch(
+  "/programme-workspace/actions/:actionItemId",
+  ...protectedWorkspace,
+  requirePermission("programme.write"),
+  async (req, res): Promise<void> => {
+    const actionItem = await updateActionItem(context(req), idParam(req, "actionItemId"), req.body);
+    await writeRequestAuditEvent({
+      req,
+      actionType: "action_plan.item_updated",
+      subjectType: "action_plan_item",
+      subjectId: actionItem.id,
+      metadata: { status: actionItem.status, priority: actionItem.priority },
+    });
+    res.json({ actionItem });
+  },
+);
+
+router.post(
+  "/programme-workspace/programme-versions/:programmeVersionId/actions/export",
+  ...protectedWorkspace,
+  requirePermission("programme.read"),
+  async (req, res): Promise<void> => {
+    const format = req.body?.format === "csv" ? "csv" : "json";
+    const reviewCycleId = String(req.body?.reviewCycleId ?? "");
+    if (!reviewCycleId) {
+      res.status(400).json({ error: "missing_review_cycle", message: "Review cycle is required for export." });
+      return;
+    }
+    const result = await exportActionPlan(context(req), idParam(req, "programmeVersionId"), reviewCycleId, format);
+    await writeRequestAuditEvent({
+      req,
+      actionType: "action_plan.exported",
+      subjectType: "review_export",
+      subjectId: result.reviewExport.id,
+      metadata: { reviewCycleId, format },
     });
     res.status(201).json(result);
   },
