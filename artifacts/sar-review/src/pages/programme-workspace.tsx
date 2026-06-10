@@ -867,10 +867,10 @@ export default function ProgrammeWorkspace() {
           <TabsTrigger value="overview"><BookOpenCheck className="mr-2 h-4 w-4" />Overview</TabsTrigger>
           <TabsTrigger value="structure"><Layers3 className="mr-2 h-4 w-4" />Structure</TabsTrigger>
           <TabsTrigger value="comparison"><GitCompareArrows className="mr-2 h-4 w-4" />Comparison</TabsTrigger>
-          <TabsTrigger value="review-cycles"><ClipboardCheck className="mr-2 h-4 w-4" />Review Cycles</TabsTrigger>
-          <TabsTrigger value="readiness"><Gauge className="mr-2 h-4 w-4" />Readiness</TabsTrigger>
-          <TabsTrigger value="swot"><ListChecks className="mr-2 h-4 w-4" />SWOT</TabsTrigger>
-          <TabsTrigger value="actions"><ShieldCheck className="mr-2 h-4 w-4" />Action Planning</TabsTrigger>
+          <TabsTrigger value="review-cycles" data-tour="tab-review-cycles"><ClipboardCheck className="mr-2 h-4 w-4" />Review Cycles</TabsTrigger>
+          <TabsTrigger value="readiness" data-tour="tab-readiness"><Gauge className="mr-2 h-4 w-4" />Readiness</TabsTrigger>
+          <TabsTrigger value="swot" data-tour="tab-swot"><ListChecks className="mr-2 h-4 w-4" />SWOT</TabsTrigger>
+          <TabsTrigger value="actions" data-tour="tab-actions"><ShieldCheck className="mr-2 h-4 w-4" />Action Planning</TabsTrigger>
           <TabsTrigger value="quality"><ListChecks className="mr-2 h-4 w-4" />Quality</TabsTrigger>
           <TabsTrigger value="map"><Map className="mr-2 h-4 w-4" />Map preview</TabsTrigger>
         </TabsList>

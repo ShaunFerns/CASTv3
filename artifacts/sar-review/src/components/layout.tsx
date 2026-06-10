@@ -3,6 +3,7 @@ import { Link, useLocation } from "wouter";
 import {
   ArrowLeft,
   BookOpen,
+  CircleHelp,
   ClipboardCheck,
   Database,
   Home,
@@ -17,39 +18,49 @@ import {
   Upload,
   Wrench,
   X,
+  type LucideIcon,
 } from "lucide-react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { useAuth } from "@/lib/auth";
+import { GuidedOnboardingTour } from "@/components/guided-onboarding-tour";
 
-const publicNavItems = [
+type NavItem = {
+  href: string;
+  label: string;
+  icon: LucideIcon;
+  exact: boolean;
+  tourId?: string;
+};
+
+const publicNavItems: NavItem[] = [
   { href: "/", label: "Home", icon: Home, exact: true },
   { href: "/about", label: "About", icon: Info, exact: true },
   { href: "/frameworks", label: "Frameworks", icon: Layers3, exact: false },
 ];
 
-const authenticatedNavItems = [
-  { href: "/dashboard", label: "Dashboard", icon: Home, exact: true },
-  { href: "/ingestion", label: "Upload Curriculum", icon: Upload, exact: false },
-  { href: "/programme/workspace", label: "Programme Workspace", icon: Library, exact: false },
-  { href: "/programme/map", label: "Programme Map", icon: Map, exact: false },
-  { href: "/frameworks", label: "Framework Hub", icon: Layers3, exact: false },
-  { href: "/module-library", label: "Module Library", icon: BookOpen, exact: false },
-  { href: "/module-builder", label: "Module Builder", icon: Wrench, exact: false },
-  { href: "/review-enhancement", label: "Review & Enhancement", icon: ClipboardCheck, exact: false },
-  { href: "/data-quality", label: "Data Quality", icon: Database, exact: false },
-  { href: "/admin/login", label: "Administration", icon: Settings, exact: false },
+const authenticatedNavItems: NavItem[] = [
+  { href: "/dashboard", label: "Dashboard", icon: Home, exact: true, tourId: "nav-dashboard" },
+  { href: "/ingestion", label: "Upload Curriculum", icon: Upload, exact: false, tourId: "nav-upload-curriculum" },
+  { href: "/programme/workspace", label: "Programme Workspace", icon: Library, exact: false, tourId: "nav-programme-workspace" },
+  { href: "/programme/map", label: "Programme Map", icon: Map, exact: false, tourId: "nav-programme-map" },
+  { href: "/frameworks", label: "Framework Hub", icon: Layers3, exact: false, tourId: "nav-framework-hub" },
+  { href: "/module-library", label: "Module Library", icon: BookOpen, exact: false, tourId: "nav-module-library" },
+  { href: "/module-builder", label: "Module Builder", icon: Wrench, exact: false, tourId: "nav-module-builder" },
+  { href: "/review-enhancement", label: "Review & Enhancement", icon: ClipboardCheck, exact: false, tourId: "nav-review-enhancement" },
+  { href: "/data-quality", label: "Data Quality", icon: Database, exact: false, tourId: "nav-data-quality" },
+  { href: "/admin/login", label: "Administration", icon: Settings, exact: false, tourId: "nav-administration" },
 ];
 
-function getNavItems(location: string, isAuthenticated: boolean) {
+function getNavItems(location: string, isAuthenticated: boolean): NavItem[] {
   if (!isAuthenticated) return publicNavItems;
 
   if (location.startsWith("/modules/")) {
     return [
-      { href: "/dashboard", label: "Dashboard", icon: Home, exact: true },
-      { href: "/programme/workspace", label: "Programme Workspace", icon: Library, exact: false },
-      { href: "/module-library", label: "Module Library", icon: BookOpen, exact: false },
-      { href: "/module-builder", label: "Module Builder", icon: Wrench, exact: false },
-      { href: "/data-quality", label: "Data Quality", icon: Database, exact: false },
+      { href: "/dashboard", label: "Dashboard", icon: Home, exact: true, tourId: "nav-dashboard" },
+      { href: "/programme/workspace", label: "Programme Workspace", icon: Library, exact: false, tourId: "nav-programme-workspace" },
+      { href: "/module-library", label: "Module Library", icon: BookOpen, exact: false, tourId: "nav-module-library" },
+      { href: "/module-builder", label: "Module Builder", icon: Wrench, exact: false, tourId: "nav-module-builder" },
+      { href: "/data-quality", label: "Data Quality", icon: Database, exact: false, tourId: "nav-data-quality" },
     ];
   }
 
@@ -105,6 +116,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
   }, [mobileOpen]);
 
   const activeItemStyle = { backgroundColor: "#F5A800" };
+  const restartTour = () => window.dispatchEvent(new Event("cast:start-onboarding-tour"));
 
   return (
     <div className="min-h-screen flex flex-col bg-[#f4f6f9] text-[#003865] font-sans">
@@ -137,6 +149,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                   <Link
                     key={item.href}
                     href={item.href}
+                    data-tour={item.tourId}
                     aria-current={active ? "page" : undefined}
                     className={`flex items-center gap-2 px-2.5 py-2 rounded transition-all ${
                       active
@@ -160,6 +173,21 @@ export function Layout({ children }: { children: React.ReactNode }) {
                     >
                       CAST V3
                     </span>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <button
+                          onClick={restartTour}
+                          className="flex items-center gap-1.5 rounded px-2.5 py-2 text-xs font-semibold text-white/70 hover:text-white hover:bg-white/10 transition-all"
+                          aria-label="Restart guided tour"
+                        >
+                          <CircleHelp className="h-4 w-4" aria-hidden="true" />
+                          Help
+                        </button>
+                      </TooltipTrigger>
+                      <TooltipContent side="bottom" className="text-xs">
+                        Restart guided tour
+                      </TooltipContent>
+                    </Tooltip>
                     <Tooltip>
                       <TooltipTrigger asChild>
                         <button
@@ -245,6 +273,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
                     <li key={item.href}>
                       <Link
                         href={item.href}
+                        data-tour={item.tourId}
                         aria-current={active ? "page" : undefined}
                         className={`flex items-center gap-3 px-4 py-3 rounded transition-all text-sm font-medium ${
                           active
@@ -264,21 +293,32 @@ export function Layout({ children }: { children: React.ReactNode }) {
               <li aria-hidden="true" className="my-1 border-t border-white/10" />
 
               {isAuthenticated ? (
-                <li>
-                  <button
-                    onClick={() => { void logout(); setMobileOpen(false); }}
-                    className="w-full flex items-center gap-3 px-4 py-3 rounded text-white/60 hover:text-white hover:bg-white/10 transition-all text-sm font-medium"
-                  >
-                    <LogOut className="h-4 w-4 shrink-0" aria-hidden="true" />
-                    Log out
-                    <span
-                      className="ml-auto px-2 py-0.5 text-[10px] font-bold rounded tracking-wider"
-                      style={{ backgroundColor: "#F5A800", color: "#003865" }}
+                <>
+                  <li>
+                    <button
+                      onClick={() => { restartTour(); setMobileOpen(false); }}
+                      className="w-full flex items-center gap-3 px-4 py-3 rounded text-white/70 hover:text-white hover:bg-white/10 transition-all text-sm font-medium"
                     >
-                      CAST V3
-                    </span>
-                  </button>
-                </li>
+                      <CircleHelp className="h-4 w-4 shrink-0" aria-hidden="true" />
+                      Restart guided tour
+                    </button>
+                  </li>
+                  <li>
+                    <button
+                      onClick={() => { void logout(); setMobileOpen(false); }}
+                      className="w-full flex items-center gap-3 px-4 py-3 rounded text-white/60 hover:text-white hover:bg-white/10 transition-all text-sm font-medium"
+                    >
+                      <LogOut className="h-4 w-4 shrink-0" aria-hidden="true" />
+                      Log out
+                      <span
+                        className="ml-auto px-2 py-0.5 text-[10px] font-bold rounded tracking-wider"
+                        style={{ backgroundColor: "#F5A800", color: "#003865" }}
+                      >
+                        CAST V3
+                      </span>
+                    </button>
+                  </li>
+                </>
               ) : (
                 <li>
                   <Link
@@ -298,6 +338,7 @@ export function Layout({ children }: { children: React.ReactNode }) {
       <main className="flex-1 container max-w-screen-2xl mx-auto py-8 px-4 sm:px-8">
         {children}
       </main>
+      <GuidedOnboardingTour />
     </div>
   );
 }

@@ -4,6 +4,12 @@ interface AuthContextType {
   isAdmin: boolean;
   isAuthenticated: boolean;
   isLoading: boolean;
+  userId?: string;
+  onboarding?: {
+    guidedTourCompleted: boolean;
+    guidedTourCompletedAt?: string | null;
+  };
+  refreshContext: () => Promise<void>;
   login: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
 }
@@ -14,16 +20,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isAdmin, setIsAdmin] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
+  const [userId, setUserId] = useState<string | undefined>();
+  const [onboarding, setOnboarding] = useState<AuthContextType["onboarding"]>();
 
-  useEffect(() => {
-    fetch("/api/security/context", { credentials: "include" })
+  const refreshContext = async () => {
+    await fetch("/api/security/context", { credentials: "include" })
       .then((r) => {
         if (!r.ok) throw new Error("No CAST v3 context");
         return r.json();
       })
-      .then((data: { roleKeys?: string[] }) => {
+      .then((data: { userId?: string; roleKeys?: string[]; onboarding?: AuthContextType["onboarding"] }) => {
         setIsAuthenticated(true);
         setIsAdmin(data.roleKeys?.includes("institution_admin") === true || data.roleKeys?.includes("platform_admin") === true);
+        setUserId(data.userId);
+        setOnboarding(data.onboarding);
       })
       .catch(async () => {
         try {
@@ -31,11 +41,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           const data = (await r.json()) as { isAdmin: boolean };
           setIsAuthenticated(false);
           setIsAdmin(data.isAdmin === true);
+          setUserId(undefined);
+          setOnboarding(undefined);
         } catch {
           setIsAuthenticated(false);
           setIsAdmin(false);
+          setUserId(undefined);
+          setOnboarding(undefined);
         }
-      })
+      });
+  };
+
+  useEffect(() => {
+    refreshContext()
       .finally(() => setIsLoading(false));
   }, []);
 
@@ -50,18 +68,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const data = (await r.json()) as { error?: string };
       throw new Error(data.error ?? "Login failed");
     }
-    setIsAuthenticated(true);
-    setIsAdmin(true);
+    await refreshContext();
   };
 
   const logout = async () => {
     await fetch("/api/cast-v3/auth/logout", { method: "POST", credentials: "include" });
     setIsAuthenticated(false);
     setIsAdmin(false);
+    setUserId(undefined);
+    setOnboarding(undefined);
   };
 
   return (
-    <AuthContext.Provider value={{ isAdmin, isAuthenticated, isLoading, login, logout }}>
+    <AuthContext.Provider value={{ isAdmin, isAuthenticated, isLoading, userId, onboarding, refreshContext, login, logout }}>
       {children}
     </AuthContext.Provider>
   );
