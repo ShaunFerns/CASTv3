@@ -6,13 +6,18 @@ import { Button } from "@/components/ui/button";
 
 const reviewAreas = [
   {
+    title: "Review Cycles",
+    description: "Create structured review activities for programme review, validation, revalidation, accreditation and DELTA-style readiness.",
+    icon: ClipboardList,
+  },
+  {
     title: "Readiness",
     description: "Evidence-informed readiness checks for review, validation, accreditation and institutional priorities.",
     icon: CheckCircle2,
   },
   {
     title: "SWOT",
-    description: "A future workspace for programme teams to convert evidence and insights into structured strengths, weaknesses, opportunities and threats.",
+    description: "Convert reviewed findings, readiness observations and review discussion into structured strengths, weaknesses, opportunities and threats.",
     icon: BarChart3,
   },
   {
@@ -31,8 +36,8 @@ export default function ReviewEnhancement() {
         <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100">Review and action workspace</Badge>
         <h1 className="mt-3 text-3xl font-bold tracking-tight" style={{ color: "#003865" }}>Review & Enhancement</h1>
         <p className="mt-2 max-w-3xl text-slate-600">
-          This future workspace will help programme teams review findings, conduct readiness checks, record SWOT
-          analysis, create action plans and monitor progress.
+          Review and enhancement workflows are managed from Programme Workspace. Use Review Cycles, Readiness,
+          SWOT and Action Planning to move from evidence-informed findings into human-owned curriculum enhancement.
         </p>
       </div>
 
@@ -57,7 +62,7 @@ export default function ReviewEnhancement() {
         </CardContent>
       </Card>
 
-      <div className="grid gap-4 md:grid-cols-3">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {reviewAreas.map((area) => {
           const Icon = area.icon;
           return (
@@ -68,6 +73,9 @@ export default function ReviewEnhancement() {
                 </div>
                 <h2 className="font-semibold text-slate-900">{area.title}</h2>
                 <p className="mt-2 text-sm leading-6 text-slate-600">{area.description}</p>
+                <Button asChild variant="outline" className="mt-4">
+                  <Link href="/programme/workspace">Open in Programme Workspace</Link>
+                </Button>
               </CardContent>
             </Card>
           );
@@ -84,8 +92,8 @@ export default function ReviewEnhancement() {
             </div>
           </div>
           <Button asChild variant="outline">
-            <Link href="/programme/map">
-              Open Programme Map
+            <Link href="/programme/workspace">
+              Open Programme Workspace
               <ClipboardList className="ml-2 h-4 w-4" />
             </Link>
           </Button>

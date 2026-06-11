@@ -559,6 +559,21 @@ function summarizeDesignEvaluations(
   };
 }
 
+function uniqueDescriptorSections(sections: Array<typeof descriptorSectionsTable.$inferSelect>) {
+  const seen = new Set<string>();
+  return sections.filter((section) => {
+    const key = [
+      section.moduleDescriptorId,
+      section.sectionType,
+      section.title?.trim().toLowerCase() ?? "",
+      section.content?.trim() ?? "",
+    ].join("::");
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 function udlFoundation(evidenceItems: Array<typeof evidenceItemsTable.$inferSelect>) {
   const text = evidenceItems.map((item) => item.evidenceText ?? "").join("\n").toLowerCase();
   return [
@@ -903,6 +918,7 @@ export async function getModuleBuilderDetail(context: ActorContext, moduleOrSour
 
   const assessmentDesignSummary = summarizeDesignEvaluations(assessmentDesignEvaluations);
   const modalityDesignSummary = summarizeDesignEvaluations(modalityDesignEvaluations);
+  const displaySections = uniqueDescriptorSections(sections);
   const udl = udlFoundation(evidence);
   const improvementPrompts = improvementPromptsForDetail({
     descriptorSectionCount: sections.length,
@@ -924,7 +940,7 @@ export async function getModuleBuilderDetail(context: ActorContext, moduleOrSour
       sourceType: descriptor.sourceType,
       createdAt: descriptor.createdAt?.toISOString() ?? null,
     })),
-    descriptorSections: sections.map((section) => ({
+    descriptorSections: displaySections.map((section) => ({
       id: section.id,
       descriptorId: section.moduleDescriptorId,
       sectionType: section.sectionType,

@@ -549,6 +549,24 @@ export default function ModuleBuilder() {
                 ) : <EmptyState text="No descriptor sections are available for this module yet." />}
               </SectionCard>
 
+              <SectionCard title="Learning Outcomes">
+                {detail.learningOutcomes.length > 0 ? (
+                  <div className="space-y-3">
+                    {detail.learningOutcomes.map((outcome, index) => (
+                      <div key={outcome.id} className="rounded border border-slate-200 bg-white p-4">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge variant="outline">{outcome.outcomeCode || `LO${index + 1}`}</Badge>
+                          <Badge variant="secondary">{outcome.status}</Badge>
+                        </div>
+                        <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-slate-700">
+                          {outcome.outcomeText || "No learning outcome text is available."}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                ) : <EmptyState text="No structured learning outcomes are available yet." />}
+              </SectionCard>
+
               <SectionCard title="Assessment Components">
                 {detail.assessmentComponents.length > 0 ? (
                   <div className="space-y-3">

@@ -269,10 +269,17 @@ function mergeModuleCore(target: NormalizedModuleInput, row: Record<string, unkn
 function addSection(input: NormalizedModuleInput, sectionType: string, title: string, content: string | undefined, raw?: Record<string, unknown>) {
   if (!content?.trim()) return;
   input.sections ??= [];
+  const cleaned = content.trim();
+  const alreadyExists = input.sections.some((section) =>
+    section.sectionType === sectionType &&
+    cleanKey(section.title ?? "") === cleanKey(title) &&
+    section.content?.trim() === cleaned,
+  );
+  if (alreadyExists) return;
   input.sections.push({
     sectionType,
     title,
-    content: content.trim(),
+    content: cleaned,
   });
   input.raw ??= {};
   if (raw) input.raw[`section:${title}`] = raw;
