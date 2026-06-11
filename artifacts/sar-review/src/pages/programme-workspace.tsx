@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Archive, ArrowRight, BookOpenCheck, ClipboardCheck, Download, FileSearch, Gauge, GitCompareArrows, Layers3, Library, ListChecks, Map, NotebookPen, RefreshCw, Save, ShieldCheck, Users } from "lucide-react";
+import { Archive, ArrowRight, BookOpenCheck, ClipboardCheck, Download, FileSearch, Gauge, GitCompareArrows, Layers3, Library, ListChecks, Map as MapIcon, NotebookPen, RefreshCw, Save, ShieldCheck, Users } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -91,6 +91,39 @@ type ProgrammeOverview = {
     claimCount: number;
     reviewStatus: string;
     dataQualityStatus: string;
+  }>;
+};
+
+type VisualAnalysisMode = "combined" | "provisional" | "reviewed";
+
+type FrameworkCoverageSummary = {
+  frameworkKey: string;
+  totalCompetences: number;
+  competencesObservedInProgramme: number;
+  modulesWithFrameworkEvidence: number;
+  modulesWithNoFrameworkEvidence: number;
+  evidenceLinkedEvaluations: number;
+  unevidencedEvaluations: number;
+  reviewStatusCounts: Record<string, number>;
+  evidenceMaturityDistribution: Record<string, number>;
+};
+
+type ProgrammeMapVisualProjection = {
+  rows: Array<{
+    id: string;
+    module: { id?: string | null; code?: string | null; title?: string | null };
+    layers: Array<{
+      key: string;
+      name: string;
+      indicators?: Array<{
+        competencyId?: string | null;
+        competencyName?: string | null;
+        observedLevel: string;
+        status: string;
+        evidenceCount: number;
+        analysisScope?: "provisional" | "reviewed" | "excluded";
+      }>;
+    }>;
   }>;
 };
 
@@ -314,6 +347,43 @@ function maturityLabel(key: string) {
   return labels[key] ?? key;
 }
 
+const frameworkVisualKeys = ["greencomp", "digcomp", "entrecomp"] as const;
+const frameworkVisualColours: Record<string, string> = {
+  greencomp: "#16a34a",
+  digcomp: "#2563eb",
+  entrecomp: "#d97706",
+};
+const maturityScores: Record<string, number> = {
+  none: 0,
+  developing: 1,
+  consolidating: 2,
+  leading: 3,
+};
+
+function analysisQuery(mode: VisualAnalysisMode) {
+  return mode === "combined" ? "all" : mode;
+}
+
+function analysisLabel(mode: VisualAnalysisMode) {
+  if (mode === "combined") return "Combined";
+  return mode === "provisional" ? "Provisional" : "Reviewed";
+}
+
+function percent(value: number, total: number) {
+  return total > 0 ? Math.round((value / total) * 100) : 0;
+}
+
+function scoreForMaturity(value?: string | null) {
+  return maturityScores[value ?? "none"] ?? 0;
+}
+
+function heatTone(value: number) {
+  if (value >= 3) return "bg-emerald-700";
+  if (value === 2) return "bg-emerald-400";
+  if (value === 1) return "bg-amber-300";
+  return "bg-slate-100";
+}
+
 function metricTone(delta: number) {
   if (delta < 0) return "text-emerald-700";
   if (delta > 0) return "text-amber-700";
@@ -355,6 +425,182 @@ function savePayload(filename: string, contentType: string, payload: string) {
   URL.revokeObjectURL(url);
 }
 
+function FrameworkRadar({ coverage }: { coverage: Record<string, FrameworkCoverageSummary | undefined> }) {
+  const size = 220;
+  const centre = size / 2;
+  const radius = 78;
+  const points = frameworkVisualKeys.map((key, index) => {
+    const angle = -Math.PI / 2 + (index * 2 * Math.PI) / frameworkVisualKeys.length;
+    const summary = coverage[key];
+    const value = summary?.totalCompetences ? summary.competencesObservedInProgramme / summary.totalCompetences : 0;
+    return {
+      key,
+      label: frameworkLabel(key),
+      value,
+      x: centre + Math.cos(angle) * radius * value,
+      y: centre + Math.sin(angle) * radius * value,
+      axisX: centre + Math.cos(angle) * radius,
+      axisY: centre + Math.sin(angle) * radius,
+      labelX: centre + Math.cos(angle) * (radius + 28),
+      labelY: centre + Math.sin(angle) * (radius + 28),
+    };
+  });
+  const polygon = points.map((point) => `${point.x},${point.y}`).join(" ");
+  const grid = [0.33, 0.66, 1].map((scale) =>
+    frameworkVisualKeys.map((_, index) => {
+      const angle = -Math.PI / 2 + (index * 2 * Math.PI) / frameworkVisualKeys.length;
+      return `${centre + Math.cos(angle) * radius * scale},${centre + Math.sin(angle) * radius * scale}`;
+    }).join(" "),
+  );
+
+  return (
+    <div className="grid gap-4 lg:grid-cols-[240px_1fr]">
+      <svg viewBox={`0 0 ${size} ${size}`} role="img" aria-label="Framework coverage radar" className="mx-auto h-56 w-56">
+        {grid.map((ring, index) => <polygon key={index} points={ring} fill="none" stroke="#dbe4ef" strokeWidth="1" />)}
+        {points.map((point) => (
+          <line key={point.key} x1={centre} y1={centre} x2={point.axisX} y2={point.axisY} stroke="#dbe4ef" strokeWidth="1" />
+        ))}
+        <polygon points={polygon} fill="#2563eb22" stroke="#2563eb" strokeWidth="2" />
+        {points.map((point) => (
+          <g key={point.key}>
+            <circle cx={point.x} cy={point.y} r="4" fill={frameworkVisualColours[point.key]} />
+            <text x={point.labelX} y={point.labelY} textAnchor="middle" dominantBaseline="middle" className="fill-slate-700 text-[11px] font-semibold">
+              {point.label}
+            </text>
+          </g>
+        ))}
+      </svg>
+      <div className="space-y-3">
+        {frameworkVisualKeys.map((key) => {
+          const summary = coverage[key];
+          const total = summary?.totalCompetences ?? 0;
+          const observed = summary?.competencesObservedInProgramme ?? 0;
+          const pct = percent(observed, total);
+          return (
+            <div key={key} className="rounded border border-slate-200 bg-white p-3">
+              <div className="flex items-center justify-between text-sm">
+                <span className="font-semibold text-slate-950">{frameworkLabel(key)}</span>
+                <span className="text-slate-600">{observed}/{total} competences · {pct}%</span>
+              </div>
+              <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100">
+                <div className="h-full rounded-full" style={{ width: `${pct}%`, backgroundColor: frameworkVisualColours[key] }} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function FrameworkHeatmap({ projection, frameworkKey }: { projection: ProgrammeMapVisualProjection | null; frameworkKey: string }) {
+  const rows = projection?.rows ?? [];
+  const competencyMap = new Map<string, string>();
+  for (const row of rows) {
+    const layer = row.layers.find((candidate) => candidate.key === `framework:${frameworkKey}`);
+    for (const indicator of layer?.indicators ?? []) {
+      const id = indicator.competencyId ?? indicator.competencyName ?? "unknown";
+      competencyMap.set(id, indicator.competencyName ?? "Framework observation");
+    }
+  }
+  const competencies = [...competencyMap.entries()].slice(0, 18);
+
+  if (!projection || competencies.length === 0) {
+    return (
+      <div className="rounded border border-dashed border-slate-200 bg-slate-50 p-4 text-sm text-slate-500">
+        No {frameworkLabel(frameworkKey)} observations are available for the selected analysis view yet.
+      </div>
+    );
+  }
+
+  return (
+    <div className="overflow-auto rounded border border-slate-200">
+      <table className="w-full min-w-[920px] text-left text-xs">
+        <thead className="bg-slate-50 text-slate-600">
+          <tr>
+            <th className="sticky left-0 z-10 bg-slate-50 p-2">Module</th>
+            {competencies.map(([id, name]) => (
+              <th key={id} className="max-w-[110px] p-2 align-bottom">
+                <span className="line-clamp-3">{name}</span>
+              </th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {rows.slice(0, 60).map((row) => {
+            const layer = row.layers.find((candidate) => candidate.key === `framework:${frameworkKey}`);
+            return (
+              <tr key={row.id} className="border-t">
+                <td className="sticky left-0 z-10 max-w-[240px] bg-white p-2 font-medium text-slate-800">
+                  <div className="truncate">{row.module.code ?? "No code"}</div>
+                  <div className="truncate text-[11px] font-normal text-slate-500">{row.module.title ?? "Untitled module"}</div>
+                </td>
+                {competencies.map(([id]) => {
+                  const matches = (layer?.indicators ?? []).filter((indicator) => (indicator.competencyId ?? indicator.competencyName ?? "unknown") === id);
+                  const score = Math.max(0, ...matches.map((indicator) => scoreForMaturity(indicator.observedLevel)));
+                  const evidence = matches.reduce((sum, indicator) => sum + (indicator.evidenceCount ?? 0), 0);
+                  return (
+                    <td key={id} className="p-2">
+                      <div
+                        className={`h-7 rounded ${heatTone(score)}`}
+                        title={`${maturityLabel(Object.keys(maturityScores).find((key) => maturityScores[key] === score) ?? "none")} · ${evidence} evidence link${evidence === 1 ? "" : "s"}`}
+                      />
+                    </td>
+                  );
+                })}
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function ProgrammeAssessmentSummary({ overview }: { overview: ProgrammeOverview }) {
+  const moduleCount = overview.summary.moduleCount;
+  const withoutAssessments = overview.dataQuality.modulesWithNoAssessments;
+  const withAssessments = Math.max(0, moduleCount - withoutAssessments);
+  const assessmentCoverage = percent(withAssessments, moduleCount);
+  const outcomeCoverage = percent(Math.max(0, moduleCount - overview.dataQuality.modulesWithNoLearningOutcomes), moduleCount);
+  const qualityCoverage = percent(Math.max(0, moduleCount - overview.dataQuality.missingCredits - overview.dataQuality.missingStageSemester), moduleCount);
+  const points = [
+    { label: "Assessment evidence", value: assessmentCoverage },
+    { label: "Outcome evidence", value: outcomeCoverage },
+    { label: "Structure quality", value: qualityCoverage },
+  ];
+
+  return (
+    <div className="grid gap-4 lg:grid-cols-[220px_1fr]">
+      <svg viewBox="0 0 220 190" role="img" aria-label="Assessment balance triangle" className="mx-auto h-48 w-56">
+        <polygon points="110,18 24,166 196,166" fill="#eff6ff" stroke="#bfdbfe" strokeWidth="2" />
+        <polygon
+          points={`110,${166 - (148 * points[0].value) / 100} ${24 + (86 * (100 - points[1].value)) / 100},166 ${196 - (86 * (100 - points[2].value)) / 100},166`}
+          fill="#f59e0b44"
+          stroke="#d97706"
+          strokeWidth="2"
+        />
+        <text x="110" y="12" textAnchor="middle" className="fill-slate-700 text-[11px] font-semibold">Assessment</text>
+        <text x="24" y="184" textAnchor="middle" className="fill-slate-700 text-[11px] font-semibold">Outcomes</text>
+        <text x="196" y="184" textAnchor="middle" className="fill-slate-700 text-[11px] font-semibold">Quality</text>
+      </svg>
+      <div className="space-y-3">
+        {points.map((point) => (
+          <div key={point.label} className="rounded border border-slate-200 bg-white p-3">
+            <div className="flex justify-between text-sm"><span className="font-semibold text-slate-950">{point.label}</span><span>{point.value}%</span></div>
+            <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100">
+              <div className="h-full rounded-full bg-amber-500" style={{ width: `${point.value}%` }} />
+            </div>
+          </div>
+        ))}
+        <p className="text-xs leading-5 text-slate-500">
+          This is an evidence-availability view. It highlights where assessment and outcome evidence exists; it is not a judgement of assessment quality.
+        </p>
+      </div>
+    </div>
+  );
+}
+
 export default function ProgrammeWorkspace() {
   const [state, setState] = useState<WorkspaceState>({ loading: false });
   const [sourceProgrammes, setSourceProgrammes] = useState<SourceProgramme[]>([]);
@@ -369,6 +615,10 @@ export default function ProgrammeWorkspace() {
   const [quality, setQuality] = useState<unknown>(null);
   const [preview, setPreview] = useState<{ rows?: Array<Record<string, unknown>> } | null>(null);
   const [overview, setOverview] = useState<ProgrammeOverview | null>(null);
+  const [visualAnalysisMode, setVisualAnalysisMode] = useState<VisualAnalysisMode>("combined");
+  const [visualFramework, setVisualFramework] = useState<(typeof frameworkVisualKeys)[number]>("greencomp");
+  const [visualCoverage, setVisualCoverage] = useState<Record<string, FrameworkCoverageSummary | undefined>>({});
+  const [visualProjection, setVisualProjection] = useState<ProgrammeMapVisualProjection | null>(null);
   const [comparisonOptions, setComparisonOptions] = useState<ComparisonOptions>({ programmeVersions: [], snapshots: [], uploads: [] });
   const [comparisonMode, setComparisonMode] = useState<ComparisonMode>("programme_version");
   const [comparisonLeftId, setComparisonLeftId] = useState("");
@@ -456,6 +706,8 @@ export default function ProgrammeWorkspace() {
       setReadinessSummary(null);
       setReadinessAssessments([]);
       setReadinessItems([]);
+      setVisualCoverage({});
+      setVisualProjection(null);
       setSwotItems([]);
       setActionItems([]);
       setActionMonitoring(null);
@@ -465,10 +717,11 @@ export default function ProgrammeWorkspace() {
     void loadOverview();
     void loadReviewCycles();
     void loadReadiness();
+    void loadVisualIntelligence();
     void loadSwot();
     void loadActions();
     void loadReviewContextOptions();
-  }, [selectedProgrammeId]);
+  }, [selectedProgrammeId, visualAnalysisMode]);
 
   async function createProgramme() {
     setState({ loading: true });
@@ -507,6 +760,20 @@ export default function ProgrammeWorkspace() {
   async function loadOverview() {
     if (!selectedProgrammeId) return;
     setOverview(await api<ProgrammeOverview>(`/api/programme-workspace/programme-versions/${selectedProgrammeId}/overview`));
+  }
+
+  async function loadVisualIntelligence() {
+    if (!selectedProgrammeId) return;
+    const status = analysisQuery(visualAnalysisMode);
+    const layerQuery = encodeURIComponent(frameworkVisualKeys.map((key) => `framework:${key}`).join(","));
+    const [greencomp, digcomp, entrecomp, projection] = await Promise.all([
+      api<FrameworkCoverageSummary>(`/api/programme-map/programme-versions/${selectedProgrammeId}/greencomp/coverage-summary?analysisStatus=${status}`),
+      api<FrameworkCoverageSummary>(`/api/programme-map/programme-versions/${selectedProgrammeId}/digcomp/coverage-summary?analysisStatus=${status}`),
+      api<FrameworkCoverageSummary>(`/api/programme-map/programme-versions/${selectedProgrammeId}/entrecomp/coverage-summary?analysisStatus=${status}`),
+      api<ProgrammeMapVisualProjection>(`/api/programme-map/programme-versions/${selectedProgrammeId}?layers=${layerQuery}&analysisStatus=${status}`),
+    ]);
+    setVisualCoverage({ greencomp, digcomp, entrecomp });
+    setVisualProjection(projection);
   }
 
   async function loadComparisonOptions() {
@@ -872,7 +1139,7 @@ export default function ProgrammeWorkspace() {
           <TabsTrigger value="swot" data-tour="tab-swot"><ListChecks className="mr-2 h-4 w-4" />SWOT</TabsTrigger>
           <TabsTrigger value="actions" data-tour="tab-actions"><ShieldCheck className="mr-2 h-4 w-4" />Action Planning</TabsTrigger>
           <TabsTrigger value="quality"><ListChecks className="mr-2 h-4 w-4" />Quality</TabsTrigger>
-          <TabsTrigger value="map"><Map className="mr-2 h-4 w-4" />Map preview</TabsTrigger>
+          <TabsTrigger value="map"><MapIcon className="mr-2 h-4 w-4" />Map preview</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="space-y-4">
@@ -887,6 +1154,94 @@ export default function ProgrammeWorkspace() {
 
           {overview && (
             <>
+              <Card>
+                <CardHeader className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+                  <div>
+                    <CardTitle>Visual Intelligence Dashboard</CardTitle>
+                    <p className="mt-1 max-w-3xl text-sm text-slate-600">
+                      Immediate programme-level visibility across framework coverage, competency heatmaps, assessment evidence, readiness and data quality.
+                    </p>
+                  </div>
+                  <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                    <Select value={visualAnalysisMode} onValueChange={(value) => setVisualAnalysisMode(value as VisualAnalysisMode)}>
+                      <SelectTrigger className="w-full sm:w-[160px]"><SelectValue placeholder="Analysis view" /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="combined">Combined</SelectItem>
+                        <SelectItem value="provisional">Provisional</SelectItem>
+                        <SelectItem value="reviewed">Reviewed</SelectItem>
+                      </SelectContent>
+                    </Select>
+                    <Button variant="outline" onClick={loadVisualIntelligence} disabled={!selectedProgrammeId}>
+                      <RefreshCw className="mr-2 h-4 w-4" />Refresh visuals
+                    </Button>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-4">
+                  <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                    <strong>{analysisLabel(visualAnalysisMode)} view.</strong>{" "}
+                    {visualAnalysisMode === "reviewed"
+                      ? "Only reviewed or confirmed framework observations are shown."
+                      : "Provisional analysis is visible. Review required before formal use."}
+                  </div>
+                  <div className="grid gap-4 xl:grid-cols-[1fr_1.2fr]">
+                    <Card className="border-slate-200 shadow-none">
+                      <CardHeader><CardTitle className="text-base">Framework Coverage Radar</CardTitle></CardHeader>
+                      <CardContent>
+                        <FrameworkRadar coverage={visualCoverage} />
+                      </CardContent>
+                    </Card>
+                    <Card className="border-slate-200 shadow-none">
+                      <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <CardTitle className="text-base">Framework Heatmap</CardTitle>
+                          <p className="mt-1 text-xs text-slate-500">Rows are modules; columns are observed framework competencies.</p>
+                        </div>
+                        <Select value={visualFramework} onValueChange={(value) => setVisualFramework(value as typeof visualFramework)}>
+                          <SelectTrigger className="w-full sm:w-[160px]"><SelectValue placeholder="Framework" /></SelectTrigger>
+                          <SelectContent>
+                            {frameworkVisualKeys.map((key) => <SelectItem key={key} value={key}>{frameworkLabel(key)}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </CardHeader>
+                      <CardContent>
+                        <FrameworkHeatmap projection={visualProjection} frameworkKey={visualFramework} />
+                      </CardContent>
+                    </Card>
+                  </div>
+                  <div className="grid gap-4 xl:grid-cols-3">
+                    <Card className="border-slate-200 shadow-none">
+                      <CardHeader><CardTitle className="text-base">Assessment Summary</CardTitle></CardHeader>
+                      <CardContent><ProgrammeAssessmentSummary overview={overview} /></CardContent>
+                    </Card>
+                    <Card className="border-slate-200 shadow-none">
+                      <CardHeader><CardTitle className="text-base">Readiness Summary</CardTitle></CardHeader>
+                      <CardContent className="space-y-3">
+                        <div className="text-2xl font-semibold text-slate-950">{readinessSummary?.overallStatusLabel ?? "Not captured"}</div>
+                        <p className="text-sm leading-6 text-slate-600">
+                          {readinessSummary ? readinessSummary.note : "Open the Readiness tab to refresh or capture a review-team readiness summary."}
+                        </p>
+                      </CardContent>
+                    </Card>
+                    <Card className="border-slate-200 shadow-none">
+                      <CardHeader><CardTitle className="text-base">Data Quality Summary</CardTitle></CardHeader>
+                      <CardContent className="space-y-2">
+                        {[
+                          ["Missing stage/semester", overview.dataQuality.missingStageSemester],
+                          ["Duplicate placements", overview.dataQuality.duplicatePlacementWarnings],
+                          ["No learning outcomes", overview.dataQuality.modulesWithNoLearningOutcomes],
+                          ["No assessments", overview.dataQuality.modulesWithNoAssessments],
+                        ].map(([label, value]) => (
+                          <div key={label} className="flex items-center justify-between rounded border border-slate-200 px-3 py-2 text-sm">
+                            <span>{label}</span>
+                            <Badge variant={Number(value) > 0 ? "secondary" : "outline"}>{value}</Badge>
+                          </div>
+                        ))}
+                      </CardContent>
+                    </Card>
+                  </div>
+                </CardContent>
+              </Card>
+
               <div className="grid gap-4 lg:grid-cols-[1.4fr_1fr]">
                 <Card>
                   <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -1926,7 +2281,7 @@ export default function ProgrammeWorkspace() {
           <Card>
             <CardHeader><CardTitle>Map-Ready Preview</CardTitle></CardHeader>
             <CardContent className="space-y-3">
-              <Button variant="outline" onClick={loadMapPreview} disabled={!selectedProgrammeId}><Map className="mr-2 h-4 w-4" />Load preview</Button>
+              <Button variant="outline" onClick={loadMapPreview} disabled={!selectedProgrammeId}><MapIcon className="mr-2 h-4 w-4" />Load preview</Button>
               <div className="overflow-auto rounded border border-slate-200">
                 <table className="w-full min-w-[760px] text-left text-sm">
                   <thead className="bg-slate-50 text-slate-500"><tr><th className="p-2">Stage</th><th className="p-2">Semester</th><th className="p-2">Module</th><th className="p-2">Core</th><th className="p-2">Credits</th><th className="p-2">Descriptor</th></tr></thead>

@@ -410,6 +410,9 @@ export default function ProgrammeMapPage() {
     "data-quality",
     "evidence",
     "evidence-maturity",
+    "framework:greencomp",
+    "framework:digcomp",
+    "framework:entrecomp",
     "framework:assessment-design",
     "framework:modality-design",
   ]);

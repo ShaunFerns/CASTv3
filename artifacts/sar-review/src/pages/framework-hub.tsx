@@ -203,10 +203,13 @@ export default function FrameworkHub() {
             </Card>
 
             <Card>
-              <CardHeader><CardTitle className="flex items-center gap-2"><Map className="h-5 w-5" />Programme Map Interpretation</CardTitle></CardHeader>
+              <CardHeader><CardTitle className="flex items-center gap-2"><Map className="h-5 w-5" />How CAST Uses This Framework</CardTitle></CardHeader>
               <CardContent className="space-y-3 text-sm text-slate-600">
-                <p>{selected.mapInterpretation}</p>
                 <p>{selected.castUse}</p>
+                <p>{selected.mapInterpretation}</p>
+                <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-amber-900">
+                  Visual intelligence may include provisional analysis. Human review is required before formal reporting.
+                </div>
               </CardContent>
             </Card>
           </section>
