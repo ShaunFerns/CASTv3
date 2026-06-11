@@ -40,6 +40,7 @@ type ActorContext = {
 };
 
 type EvidenceMaturityLevel = "none" | "developing" | "consolidating" | "leading";
+export type AnalysisStatusFilter = "all" | "provisional" | "reviewed";
 
 type ActiveLayer = {
   key: string;
@@ -84,6 +85,22 @@ const evidenceMaturityRank: Record<EvidenceMaturityLevel, number> = {
 function evidenceMaturityLevel(value: string | null | undefined): EvidenceMaturityLevel {
   if (value === "developing" || value === "consolidating" || value === "leading") return value;
   return "none";
+}
+
+function normaliseAnalysisStatusFilter(value: string | null | undefined): AnalysisStatusFilter {
+  return value === "provisional" || value === "reviewed" ? value : "all";
+}
+
+function analysisStatusValues(filter: AnalysisStatusFilter) {
+  if (filter === "reviewed") return ["reviewed"] as const;
+  if (filter === "provisional") return ["draft", "needs_review"] as const;
+  return ["draft", "needs_review", "reviewed"] as const;
+}
+
+function analysisScopeForStatus(status: string | null | undefined): "provisional" | "reviewed" | "excluded" {
+  if (status === "reviewed") return "reviewed";
+  if (status === "draft" || status === "needs_review") return "provisional";
+  return "excluded";
 }
 
 function highestEvidenceMaturity(values: Array<string | null | undefined>): EvidenceMaturityLevel {
@@ -481,6 +498,7 @@ async function frameworkEvaluations(
   frameworkKey: string,
   versionLabel = "2022",
   frameworkVersionId?: string,
+  analysisStatus: AnalysisStatusFilter = "all",
 ) {
   const framework = frameworkVersionId ? await frameworkVersionById(frameworkVersionId) : await frameworkVersion(frameworkKey, versionLabel);
   if (!framework) return { framework, evaluations: [] as FrameworkEvaluation[] };
@@ -498,6 +516,7 @@ async function frameworkEvaluations(
               eq(competencyEvaluationsTable.institutionId, context.institutionId),
               eq(competencyEvaluationsTable.programmeVersionId, programmeVersionId),
               eq(competenciesTable.frameworkVersionId, framework.version.id),
+              inArray(competencyEvaluationsTable.status, [...analysisStatusValues(analysisStatus)]),
               or(
                 moduleIds.length > 0 ? inArray(competencyEvaluationsTable.moduleId, moduleIds) : undefined,
                 itemIds.length > 0 ? inArray(competencyEvaluationsTable.curatedStructureItemId, itemIds) : undefined,
@@ -595,7 +614,7 @@ function bestExpectationForItem(expectations: FrameworkExpectation[], item: Stru
     .sort((a, b) => expectationSpecificity(b) - expectationSpecificity(a) || evidenceMaturityRank[evidenceMaturityLevel(b.expectedLevel)] - evidenceMaturityRank[evidenceMaturityLevel(a.expectedLevel)])[0];
 }
 
-async function programmeAttributeLayer(context: ActorContext, programmeVersionId: string) {
+async function programmeAttributeLayer(context: ActorContext, programmeVersionId: string, analysisStatus: AnalysisStatusFilter = "all") {
   const attributes = await db
     .select()
     .from(programmeGraduateAttributesTable)
@@ -627,6 +646,7 @@ async function programmeAttributeLayer(context: ActorContext, programmeVersionId
               eq(competencyEvaluationsTable.institutionId, context.institutionId),
               eq(competencyEvaluationsTable.programmeVersionId, programmeVersionId),
               inArray(competencyEvaluationsTable.programmeGraduateAttributeId, attributeIds),
+              inArray(competencyEvaluationsTable.status, [...analysisStatusValues(analysisStatus)]),
             ),
           )
       : [];
@@ -693,7 +713,9 @@ export async function getProgrammeMapProjection(
   context: ActorContext,
   programmeVersionId: string,
   requestedLayerKeys: string[] = [],
+  requestedAnalysisStatus: AnalysisStatusFilter = "all",
 ) {
+  const analysisStatus = normaliseAnalysisStatusFilter(requestedAnalysisStatus);
   const data = await structureForProgramme(context, programmeVersionId);
   const layerCatalog = await getAvailableLayers(context, programmeVersionId);
   const activeLayerSet = new Set(requestedLayerKeys.length > 0 ? requestedLayerKeys : systemLayers.map((layer) => layer.key));
@@ -703,14 +725,14 @@ export async function getProgrammeMapProjection(
   const activeFrameworkLayers = activeLayers.filter((layer) => layer.active && layer.key.startsWith("framework:"));
   const hasEvidenceMaturityLayer = activeLayers.some((layer) => layer.active && layer.layerType === "evidence_maturity");
   const hasProgrammeAttributeLayer = activeLayers.some((layer) => layer.active && layer.layerType === "programme_framework");
-  const programmeAttributeBundle = hasProgrammeAttributeLayer ? await programmeAttributeLayer(context, programmeVersionId) : undefined;
+  const programmeAttributeBundle = hasProgrammeAttributeLayer ? await programmeAttributeLayer(context, programmeVersionId, analysisStatus) : undefined;
   const frameworkEvaluationBundles = new Map<string, Awaited<ReturnType<typeof frameworkEvaluations>>>();
   const frameworkExpectationBundles = new Map<string, Awaited<ReturnType<typeof frameworkExpectations>>>();
   for (const layer of activeFrameworkLayers) {
     const frameworkKey = layer.key.replace("framework:", "");
     frameworkEvaluationBundles.set(
       frameworkKey,
-      await frameworkEvaluations(context, programmeVersionId, data.items, frameworkKey, layer.versionLabel ?? defaultVersionForFramework(frameworkKey), layer.frameworkVersionId),
+      await frameworkEvaluations(context, programmeVersionId, data.items, frameworkKey, layer.versionLabel ?? defaultVersionForFramework(frameworkKey), layer.frameworkVersionId, analysisStatus),
     );
     frameworkExpectationBundles.set(
       frameworkKey,
@@ -727,6 +749,7 @@ export async function getProgrammeMapProjection(
           and(
             eq(competencyEvaluationsTable.institutionId, context.institutionId),
             eq(competencyEvaluationsTable.programmeVersionId, programmeVersionId),
+            inArray(competencyEvaluationsTable.status, [...analysisStatusValues(analysisStatus)]),
             or(
               itemIdsForMaturity.length > 0 ? inArray(competencyEvaluationsTable.curatedStructureItemId, itemIdsForMaturity) : undefined,
               moduleIdsForMaturity.length > 0 ? inArray(competencyEvaluationsTable.moduleId, moduleIdsForMaturity) : undefined,
@@ -876,6 +899,7 @@ export async function getProgrammeMapProjection(
                     observedLevel,
                     comparison: compareEvidenceMaturity(expectedLevel, observedLevel, evaluation.evidenceCount),
                     status: evaluation.status,
+                    analysisScope: analysisScopeForStatus(evaluation.status),
                     evidenceCount: evaluation.evidenceCount,
                     rationale: evaluation.rationale,
                   };
@@ -941,6 +965,7 @@ export async function getProgrammeMapProjection(
                   observedLevel,
                   comparison: compareEvidenceMaturity(expectedLevel, observedLevel, evaluation.evidenceCount),
                   status: evaluation.status,
+                  analysisScope: analysisScopeForStatus(evaluation.status),
                   evidenceCount: evaluation.evidenceCount,
                   rationale: evaluation.rationale,
                 };
@@ -962,6 +987,8 @@ export async function getProgrammeMapProjection(
   return {
     programmeVersion: data.programmeVersion,
     curatedStructure: data.structure,
+    analysisStatus,
+    provisionalNotice: "Provisional analysis. Review required before formal use.",
     activeLayers,
     columns,
     rows,
@@ -1155,8 +1182,18 @@ export async function createProgrammeMapExport(
 }
 
 async function getFrameworkCoverageSummary(context: ActorContext, programmeVersionId: string, frameworkKey: string, versionLabel = "2022") {
+  return getFrameworkCoverageSummaryForStatus(context, programmeVersionId, frameworkKey, versionLabel, "all");
+}
+
+async function getFrameworkCoverageSummaryForStatus(
+  context: ActorContext,
+  programmeVersionId: string,
+  frameworkKey: string,
+  versionLabel = "2022",
+  analysisStatus: AnalysisStatusFilter = "all",
+) {
   const data = await structureForProgramme(context, programmeVersionId);
-  const framework = await frameworkEvaluations(context, programmeVersionId, data.items, frameworkKey, versionLabel);
+  const framework = await frameworkEvaluations(context, programmeVersionId, data.items, frameworkKey, versionLabel, undefined, analysisStatus);
   const expectationBundle = await frameworkExpectations(context, programmeVersionId, frameworkKey, versionLabel, framework.framework?.version.id);
   const totalCompetencies = framework.framework
     ? (
@@ -1184,6 +1221,8 @@ async function getFrameworkCoverageSummary(context: ActorContext, programmeVersi
 
   return {
     status: "evidence_informed",
+    analysisStatus,
+    provisionalNotice: "Provisional analysis. Review required before formal use.",
     frameworkKey,
     totalCompetences: totalCompetencies,
     competencesExpectedInProgramme: expectedCompetencyIds.size,
@@ -1257,8 +1296,8 @@ function expectationMatrix(
   return { matrix, rows };
 }
 
-export async function getGreenCompCoverageSummary(context: ActorContext, programmeVersionId: string) {
-  const summary = await getFrameworkCoverageSummary(context, programmeVersionId, "greencomp", "2022");
+export async function getGreenCompCoverageSummary(context: ActorContext, programmeVersionId: string, analysisStatus: AnalysisStatusFilter = "all") {
+  const summary = await getFrameworkCoverageSummaryForStatus(context, programmeVersionId, "greencomp", "2022", analysisStatus);
   return {
     ...summary,
     totalGreenCompCompetences: summary.totalCompetences,
@@ -1267,8 +1306,8 @@ export async function getGreenCompCoverageSummary(context: ActorContext, program
   };
 }
 
-export async function getLifeCompCoverageSummary(context: ActorContext, programmeVersionId: string) {
-  const summary = await getFrameworkCoverageSummary(context, programmeVersionId, "lifecomp", "2020");
+export async function getLifeCompCoverageSummary(context: ActorContext, programmeVersionId: string, analysisStatus: AnalysisStatusFilter = "all") {
+  const summary = await getFrameworkCoverageSummaryForStatus(context, programmeVersionId, "lifecomp", "2020", analysisStatus);
   return {
     ...summary,
     totalLifeCompCompetences: summary.totalCompetences,
@@ -1277,8 +1316,8 @@ export async function getLifeCompCoverageSummary(context: ActorContext, programm
   };
 }
 
-export async function getEntreCompCoverageSummary(context: ActorContext, programmeVersionId: string) {
-  const summary = await getFrameworkCoverageSummary(context, programmeVersionId, "entrecomp", "2016");
+export async function getEntreCompCoverageSummary(context: ActorContext, programmeVersionId: string, analysisStatus: AnalysisStatusFilter = "all") {
+  const summary = await getFrameworkCoverageSummaryForStatus(context, programmeVersionId, "entrecomp", "2016", analysisStatus);
   return {
     ...summary,
     totalEntreCompCompetences: summary.totalCompetences,
@@ -1287,8 +1326,8 @@ export async function getEntreCompCoverageSummary(context: ActorContext, program
   };
 }
 
-export async function getDigCompCoverageSummary(context: ActorContext, programmeVersionId: string) {
-  const summary = await getFrameworkCoverageSummary(context, programmeVersionId, "digcomp", "3.0");
+export async function getDigCompCoverageSummary(context: ActorContext, programmeVersionId: string, analysisStatus: AnalysisStatusFilter = "all") {
+  const summary = await getFrameworkCoverageSummaryForStatus(context, programmeVersionId, "digcomp", "3.0", analysisStatus);
   return {
     ...summary,
     totalDigCompCompetences: summary.totalCompetences,
@@ -1297,10 +1336,16 @@ export async function getDigCompCoverageSummary(context: ActorContext, programme
   };
 }
 
-export async function getFrameworkExpectationAnalysis(context: ActorContext, programmeVersionId: string, frameworkKey: string) {
+export async function getFrameworkExpectationAnalysis(
+  context: ActorContext,
+  programmeVersionId: string,
+  frameworkKey: string,
+  requestedAnalysisStatus: AnalysisStatusFilter = "all",
+) {
+  const analysisStatus = normaliseAnalysisStatusFilter(requestedAnalysisStatus);
   const versionLabel = defaultVersionForFramework(frameworkKey);
   const data = await structureForProgramme(context, programmeVersionId);
-  const evaluations = await frameworkEvaluations(context, programmeVersionId, data.items, frameworkKey, versionLabel);
+  const evaluations = await frameworkEvaluations(context, programmeVersionId, data.items, frameworkKey, versionLabel, undefined, analysisStatus);
   const expectations = await frameworkExpectations(context, programmeVersionId, frameworkKey, versionLabel, evaluations.framework?.version.id);
   const matrix = expectationMatrix(data.items, data.groups, expectations.expectations, evaluations.evaluations);
   const byCompetency = expectations.competencies.map((competency) => {
@@ -1327,6 +1372,8 @@ export async function getFrameworkExpectationAnalysis(context: ActorContext, pro
   return {
     frameworkKey,
     versionLabel,
+    analysisStatus,
+    provisionalNotice: "Provisional analysis. Review required before formal use.",
     programmeVersion: data.programmeVersion,
     summary: {
       totalCompetences: expectations.competencies.length,
@@ -1336,7 +1383,7 @@ export async function getFrameworkExpectationAnalysis(context: ActorContext, pro
       strengthCount: byCompetency.filter((row) => isStrengthComparison(row.comparison)).length,
       reviewReadyCount: evaluations.evaluations.filter((evaluation) => evaluation.status === "draft" || evaluation.status === "needs_review").length,
     },
-    coverageSummary: await getFrameworkCoverageSummary(context, programmeVersionId, frameworkKey, versionLabel),
+    coverageSummary: await getFrameworkCoverageSummaryForStatus(context, programmeVersionId, frameworkKey, versionLabel, analysisStatus),
     expectedVersusObservedMatrix: matrix.matrix,
     moduleMatrix: matrix.rows,
     byCompetency,
@@ -1510,7 +1557,7 @@ async function createFrameworkEvaluation(
     moduleId?: string;
     moduleDescriptorId?: string;
     observedLevel?: EvidenceMaturityLevel;
-    status?: "draft" | "needs_review";
+    status?: "draft" | "needs_review" | "reviewed";
     confidence?: number;
     rationale?: string;
   },
@@ -1561,7 +1608,13 @@ async function createFrameworkEvaluation(
       confidence: input.confidence,
       rationale: input.rationale,
       createdByUserId: context.userId,
-      metadata: { framework: frameworkKey, phase, aiClassification: false },
+      metadata: {
+        framework: frameworkKey,
+        phase,
+        aiClassification: false,
+        analysisScope: input.status === "reviewed" ? "reviewed" : "provisional",
+        formalUseRequiresReview: input.status !== "reviewed",
+      },
     })
     .returning();
 

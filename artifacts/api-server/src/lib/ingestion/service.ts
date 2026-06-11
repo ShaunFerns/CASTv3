@@ -29,6 +29,7 @@ import {
 } from "@workspace/db";
 import { normalizeAkariRow, normalizeDescriptorSection, normalizeManualInput, sectionsFromText } from "./normalize.js";
 import { generateDraftProgrammesFromSourceProgrammes } from "../programmeWorkspace/service.js";
+import { materialiseAssessmentDesignLayer, materialiseModalityDesignLayer } from "../curriculumDesignLayers/service.js";
 import type {
   AkariIngestionInput,
   IngestionContext,
@@ -68,6 +69,46 @@ const missingRules = {
   stage: "ingestion.missing_stage",
   semester: "ingestion.missing_semester",
 } as const;
+
+async function generateProvisionalProgrammeAnalysis(context: IngestionContext, programmeVersionIds: string[]) {
+  const summaries = [];
+  const analysisContext = { institutionId: context.institutionId, userId: context.actor.userId };
+  for (const programmeVersionId of [...new Set(programmeVersionIds)].filter(Boolean)) {
+    try {
+      const [assessment, modality] = await Promise.all([
+        materialiseAssessmentDesignLayer(analysisContext, programmeVersionId),
+        materialiseModalityDesignLayer(analysisContext, programmeVersionId),
+      ]);
+      summaries.push({
+        programmeVersionId,
+        status: "completed",
+        notice: "Provisional analysis. Review required before formal use.",
+        layers: {
+          assessmentDesign: {
+            indicatorCount: assessment.indicatorCount,
+            highestObservedMaturity: assessment.highestObservedMaturity,
+          },
+          modalityDesign: {
+            indicatorCount: modality.indicatorCount,
+            highestObservedMaturity: modality.highestObservedMaturity,
+          },
+        },
+      });
+    } catch (error) {
+      logger.warn(
+        { err: error, institutionId: context.institutionId, programmeVersionId },
+        "Provisional programme analysis could not be generated after upload",
+      );
+      summaries.push({
+        programmeVersionId,
+        status: "skipped",
+        notice: "Provisional analysis could not be generated for this programme.",
+        error: error instanceof Error ? error.message : "Unknown provisional analysis error",
+      });
+    }
+  }
+  return summaries;
+}
 
 function checksum(text: string): string {
   return createHash("sha256").update(text).digest("hex");
@@ -1271,6 +1312,10 @@ export async function ingestAkariExport(context: IngestionContext, input: AkariI
           versionLabel: "Draft",
         })
       : { programmeVersionsCreatedOrReused: 0, generated: [] };
+    const provisionalAnalysis = await generateProvisionalProgrammeAnalysis(
+      context,
+      draftProgrammeGeneration.generated.map((item) => item.programmeVersionId),
+    );
 
     await db
       .update(importBatchesTable)
@@ -1290,6 +1335,8 @@ export async function ingestAkariExport(context: IngestionContext, input: AkariI
           modulesWithProgrammeLinks: parsed.modules.filter((module) => module.importStats?.hasProgrammeLinks).length,
           draftProgrammes: draftProgrammeGeneration.programmeVersionsCreatedOrReused,
           draftProgrammeGeneration,
+          provisionalAnalysis,
+          provisionalNotice: "Provisional analysis. Review required before formal use.",
           rowsSkipped: parsed.skippedRows.length,
           skippedRows: parsed.skippedRows,
         },
@@ -1307,6 +1354,8 @@ export async function ingestAkariExport(context: IngestionContext, input: AkariI
       modulesWithProgrammeLinks: parsed.modules.filter((module) => module.importStats?.hasProgrammeLinks).length,
       draftProgrammes: draftProgrammeGeneration.programmeVersionsCreatedOrReused,
       draftProgrammeGeneration,
+      provisionalAnalysis,
+      provisionalNotice: "Provisional analysis. Review required before formal use.",
       rowsSkipped: parsed.skippedRows.length,
       skippedRows: parsed.skippedRows,
     });

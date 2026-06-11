@@ -70,6 +70,12 @@ function layerKeys(req: Request): string[] {
   return value.split(",").map((layer) => layer.trim()).filter(Boolean);
 }
 
+function analysisStatus(req: Request): "all" | "provisional" | "reviewed" {
+  const raw = req.query["analysisStatus"];
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  return value === "provisional" || value === "reviewed" ? value : "all";
+}
+
 router.get(
   "/programme-map/framework-families",
   ...protectedProgrammeMap,
@@ -214,7 +220,7 @@ router.get(
   ...protectedProgrammeMap,
   requirePermission("programme.read"),
   async (req, res): Promise<void> => {
-    res.json(await getGreenCompCoverageSummary(context(req), idParam(req, "programmeVersionId")));
+    res.json(await getGreenCompCoverageSummary(context(req), idParam(req, "programmeVersionId"), analysisStatus(req)));
   },
 );
 
@@ -223,7 +229,7 @@ router.get(
   ...protectedProgrammeMap,
   requirePermission("programme.read"),
   async (req, res): Promise<void> => {
-    res.json(await getLifeCompCoverageSummary(context(req), idParam(req, "programmeVersionId")));
+    res.json(await getLifeCompCoverageSummary(context(req), idParam(req, "programmeVersionId"), analysisStatus(req)));
   },
 );
 
@@ -232,7 +238,7 @@ router.get(
   ...protectedProgrammeMap,
   requirePermission("programme.read"),
   async (req, res): Promise<void> => {
-    res.json(await getEntreCompCoverageSummary(context(req), idParam(req, "programmeVersionId")));
+    res.json(await getEntreCompCoverageSummary(context(req), idParam(req, "programmeVersionId"), analysisStatus(req)));
   },
 );
 
@@ -241,7 +247,7 @@ router.get(
   ...protectedProgrammeMap,
   requirePermission("programme.read"),
   async (req, res): Promise<void> => {
-    res.json(await getDigCompCoverageSummary(context(req), idParam(req, "programmeVersionId")));
+    res.json(await getDigCompCoverageSummary(context(req), idParam(req, "programmeVersionId"), analysisStatus(req)));
   },
 );
 
@@ -316,7 +322,7 @@ router.get(
   ...protectedProgrammeMap,
   requirePermission("programme.read"),
   async (req, res): Promise<void> => {
-    res.json(await getFrameworkExpectationAnalysis(context(req), idParam(req, "programmeVersionId"), idParam(req, "frameworkKey")));
+    res.json(await getFrameworkExpectationAnalysis(context(req), idParam(req, "programmeVersionId"), idParam(req, "frameworkKey"), analysisStatus(req)));
   },
 );
 
@@ -506,7 +512,7 @@ router.get(
   ...protectedProgrammeMap,
   requirePermission("programme.read"),
   async (req, res): Promise<void> => {
-    const result = await getProgrammeMapProjection(context(req), idParam(req, "programmeVersionId"), layerKeys(req));
+    const result = await getProgrammeMapProjection(context(req), idParam(req, "programmeVersionId"), layerKeys(req), analysisStatus(req));
     await writeRequestAuditEvent({
       req,
       actionType: "programme_map.viewed",
@@ -515,6 +521,7 @@ router.get(
       metadata: {
         programmeVersionId: result.programmeVersion.id,
         activeLayerKeys: result.activeLayers.filter((layer) => layer.active).map((layer) => layer.key),
+        analysisStatus: result.analysisStatus,
         rowCount: result.rows.length,
       },
     });

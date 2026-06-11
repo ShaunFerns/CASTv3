@@ -936,6 +936,9 @@ export default function ProgrammeWorkspace() {
                 <Card>
                   <CardHeader><CardTitle>Curriculum Coverage</CardTitle></CardHeader>
                   <CardContent className="space-y-4">
+                    <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
+                      Provisional analysis. Review required before formal use.
+                    </div>
                     <div className="space-y-3">
                       {["greencomp", "lifecomp", "entrecomp", "digcomp"].map((key) => {
                         const coverage = overview.curriculumCoverage.frameworks[key] ?? { totalCompetencies: 0, observedCompetencies: 0, coveragePercent: 0 };
@@ -1453,7 +1456,7 @@ export default function ProgrammeWorkspace() {
                 <div>
                   <CardTitle>Evidence-Informed Readiness</CardTitle>
                   <p className="mt-1 max-w-3xl text-sm text-slate-600">
-                    Readiness brings together existing programme structure, framework coverage, assessment evidence, data quality and human-reviewed findings. It supports review-team judgement; it is not an institutional decision.
+                    Readiness brings together existing programme structure, framework coverage, assessment evidence, data quality and human-reviewed findings. Live readiness is provisional analysis; captured summaries support review-team judgement and are not institutional decisions.
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">

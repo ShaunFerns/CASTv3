@@ -223,6 +223,8 @@ async function upsertRuleEvaluation(input: {
       phase: input.phase,
       aiClassification: false,
       institutionalJudgement: false,
+      analysisScope: "provisional",
+      provisionalNotice: "Provisional analysis. Review required before formal use.",
       metrics: input.metrics,
     },
   };
@@ -515,8 +517,9 @@ export async function assessmentDesignSummary(
 
   return {
     status: "evidence_informed",
+    analysisScope: "provisional",
     layerKey: "assessment-design",
-    message: "Assessment Design outputs are deterministic evidence signals for human review, not automatic institutional judgements.",
+    message: "Provisional analysis. Review required before formal use. Assessment Design outputs are deterministic evidence signals for human review, not automatic institutional judgements.",
     modulePlacementCount: data.items.length,
     modulesWithAssessmentComponents: moduleDescriptorIdsWithAssessment.size,
     modulesWithNoAssessmentComponents: data.items.filter((item) => !moduleDescriptorIdsWithAssessment.has(item.moduleDescriptorId ?? "")).length,
@@ -561,8 +564,9 @@ export async function modalityDesignSummary(
 
   return {
     status: "evidence_informed",
+    analysisScope: "provisional",
     layerKey: "modality-design",
-    message: "Modality Design outputs are deterministic evidence signals for human review, not automatic institutional judgements.",
+    message: "Provisional analysis. Review required before formal use. Modality Design outputs are deterministic evidence signals for human review, not automatic institutional judgements.",
     modulePlacementCount: data.items.length,
     teachingStrategySectionCount: teachingSections.length,
     modalitySectionCount: modalitySections.length,

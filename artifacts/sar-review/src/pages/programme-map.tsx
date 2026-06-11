@@ -81,12 +81,15 @@ type MapRow = {
       comparison?: string;
       status: string;
       evidenceCount: number;
+      analysisScope?: "provisional" | "reviewed" | "excluded";
     }>;
   }>;
 };
 
 type ProgrammeMapProjection = {
   programmeVersion: ProgrammeVersion;
+  analysisStatus?: "all" | "provisional" | "reviewed";
+  provisionalNotice?: string;
   activeLayers: MapLayer[];
   rows: MapRow[];
   summary: {
@@ -402,7 +405,15 @@ export default function ProgrammeMapPage() {
   const [selectedProgrammeId, setSelectedProgrammeId] = useState("");
   const [families, setFamilies] = useState<FrameworkFamily[]>([]);
   const [layers, setLayers] = useState<MapLayer[]>([]);
-  const [activeLayerKeys, setActiveLayerKeys] = useState<string[]>(["source-curated", "data-quality", "evidence"]);
+  const [activeLayerKeys, setActiveLayerKeys] = useState<string[]>([
+    "source-curated",
+    "data-quality",
+    "evidence",
+    "evidence-maturity",
+    "framework:assessment-design",
+    "framework:modality-design",
+  ]);
+  const [analysisStatus, setAnalysisStatus] = useState<"all" | "provisional" | "reviewed">("all");
   const [projection, setProjection] = useState<ProgrammeMapProjection>();
   const [coverage, setCoverage] = useState<CoverageSummary>();
   const [greenCompCoverage, setGreenCompCoverage] = useState<GreenCompCoverageSummary>();
@@ -438,12 +449,13 @@ export default function ProgrammeMapPage() {
     }
   }
 
-  async function loadMap(programmeVersionId = selectedProgrammeId, nextActiveLayers = activeLayerKeys) {
+  async function loadMap(programmeVersionId = selectedProgrammeId, nextActiveLayers = activeLayerKeys, nextAnalysisStatus = analysisStatus) {
     if (!programmeVersionId) return;
     setLoading(true);
     setError(undefined);
     try {
       const layerQuery = encodeURIComponent(nextActiveLayers.join(","));
+      const statusQuery = encodeURIComponent(nextAnalysisStatus);
       const [
         layerResult,
         mapResult,
@@ -459,13 +471,13 @@ export default function ProgrammeMapPage() {
         exportResult,
       ] = await Promise.all([
         api<{ layers: MapLayer[] }>(`/api/programme-map/programme-versions/${programmeVersionId}/layers`),
-        api<ProgrammeMapProjection>(`/api/programme-map/programme-versions/${programmeVersionId}?layers=${layerQuery}`),
+        api<ProgrammeMapProjection>(`/api/programme-map/programme-versions/${programmeVersionId}?layers=${layerQuery}&analysisStatus=${statusQuery}`),
         api<CoverageSummary>(`/api/programme-map/programme-versions/${programmeVersionId}/coverage-summary`),
-        api<GreenCompCoverageSummary>(`/api/programme-map/programme-versions/${programmeVersionId}/greencomp/coverage-summary`),
-        api<GreenCompCoverageSummary>(`/api/programme-map/programme-versions/${programmeVersionId}/lifecomp/coverage-summary`),
-        api<GreenCompCoverageSummary>(`/api/programme-map/programme-versions/${programmeVersionId}/entrecomp/coverage-summary`),
-        api<GreenCompCoverageSummary>(`/api/programme-map/programme-versions/${programmeVersionId}/digcomp/coverage-summary`),
-        api<FrameworkExpectationAnalysis>(`/api/programme-map/programme-versions/${programmeVersionId}/frameworks/greencomp/expectation-analysis`),
+        api<GreenCompCoverageSummary>(`/api/programme-map/programme-versions/${programmeVersionId}/greencomp/coverage-summary?analysisStatus=${statusQuery}`),
+        api<GreenCompCoverageSummary>(`/api/programme-map/programme-versions/${programmeVersionId}/lifecomp/coverage-summary?analysisStatus=${statusQuery}`),
+        api<GreenCompCoverageSummary>(`/api/programme-map/programme-versions/${programmeVersionId}/entrecomp/coverage-summary?analysisStatus=${statusQuery}`),
+        api<GreenCompCoverageSummary>(`/api/programme-map/programme-versions/${programmeVersionId}/digcomp/coverage-summary?analysisStatus=${statusQuery}`),
+        api<FrameworkExpectationAnalysis>(`/api/programme-map/programme-versions/${programmeVersionId}/frameworks/greencomp/expectation-analysis?analysisStatus=${statusQuery}`),
         api<DesignLayerSummary>(`/api/programme-map/programme-versions/${programmeVersionId}/assessment-design/summary`),
         api<{ annotations: ProgrammeMapAnnotation[] }>(`/api/programme-map/programme-versions/${programmeVersionId}/annotations`),
         api<{ snapshots: ProgrammeMapSnapshot[] }>(`/api/programme-map/programme-versions/${programmeVersionId}/snapshots`),
@@ -501,7 +513,12 @@ export default function ProgrammeMapPage() {
   function toggleLayer(layerKey: string, enabled: boolean) {
     const next = enabled ? [...new Set([...activeLayerKeys, layerKey])] : activeLayerKeys.filter((key) => key !== layerKey);
     setActiveLayerKeys(next);
-    void loadMap(selectedProgrammeId, next);
+    void loadMap(selectedProgrammeId, next, analysisStatus);
+  }
+
+  function changeAnalysisStatus(value: "all" | "provisional" | "reviewed") {
+    setAnalysisStatus(value);
+    void loadMap(selectedProgrammeId, activeLayerKeys, value);
   }
 
   async function createComment() {
@@ -547,6 +564,9 @@ export default function ProgrammeMapPage() {
       <div className="flex flex-col gap-3 xl:flex-row xl:items-end xl:justify-between">
         <div>
           <h1 className="text-3xl font-bold tracking-tight" style={{ color: "#003865" }}>Programme Map</h1>
+          <p className="mt-2 max-w-3xl text-sm text-amber-700">
+            Provisional analysis. Review required before formal use.
+          </p>
           <div className="mt-2 flex flex-wrap gap-2">
             {activeLayers.length === 0 ? (
               <Badge variant="outline">Base map only</Badge>
@@ -556,6 +576,16 @@ export default function ProgrammeMapPage() {
           </div>
         </div>
         <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+          <Select value={analysisStatus} onValueChange={(value) => changeAnalysisStatus(value as "all" | "provisional" | "reviewed")}>
+            <SelectTrigger className="w-full sm:w-[180px]">
+              <SelectValue placeholder="Analysis status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">All analysis</SelectItem>
+              <SelectItem value="provisional">Provisional</SelectItem>
+              <SelectItem value="reviewed">Reviewed</SelectItem>
+            </SelectContent>
+          </Select>
           <Select value={selectedProgrammeId} onValueChange={setSelectedProgrammeId}>
             <SelectTrigger className="w-full sm:w-[420px]">
               <SelectValue placeholder="Select programme version" />
@@ -576,6 +606,12 @@ export default function ProgrammeMapPage() {
       </div>
 
       {error && <div className="rounded border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">{error}</div>}
+      <div className="rounded border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+        <strong>{analysisStatus === "reviewed" ? "Reviewed filter active." : "Provisional analysis visible."}</strong>{" "}
+        {analysisStatus === "reviewed"
+          ? "Only human-reviewed or confirmed map signals are shown."
+          : "Review required before using these outputs in formal reporting."}
+      </div>
 
       <div className="grid gap-4 xl:grid-cols-[340px_1fr]">
         <aside className="space-y-4">
@@ -682,7 +718,7 @@ export default function ProgrammeMapPage() {
                                               <span key={indicator.evaluationId} className="inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] font-medium" style={{ backgroundColor: style.background, color: style.text }}>
                                                 <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: style.dot }} />
                                                 {indicator.competencyName ?? layer.name}: {evidenceMaturityLabel(indicator.expectedLevel ?? "none")} to {evidenceMaturityLabel(indicator.observedLevel)}
-                                                <span className="text-slate-500">({comparisonLabel(indicator.comparison)}, {indicator.evidenceCount} ev.)</span>
+                                                <span className="text-slate-500">({comparisonLabel(indicator.comparison)}, {indicator.evidenceCount} ev., {indicator.analysisScope ?? "provisional"})</span>
                                               </span>
                                             ));
                                           }
