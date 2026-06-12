@@ -1,10 +1,9 @@
 import { useMemo } from "react";
 import { Link, useRoute } from "wouter";
-import { ArrowLeft, BookOpen, ExternalLink, Layers3, Map, ShieldCheck, Sparkles } from "lucide-react";
+import { ArrowLeft, BookOpen, ExternalLink, Layers3, Map, Settings2, Sparkles, Upload } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Progress } from "@/components/ui/progress";
 
 type FrameworkPage = {
   key: string;
@@ -21,13 +20,6 @@ type FrameworkPage = {
   mapInterpretation: string;
 };
 
-const maturityLevels = [
-  { label: "None", value: 0, text: "No meaningful curriculum evidence has been recorded yet." },
-  { label: "Developing", value: 33, text: "Evidence is present but limited, emerging or localised." },
-  { label: "Consolidating", value: 66, text: "Evidence is clear across relevant curriculum components." },
-  { label: "Leading", value: 100, text: "Evidence is strong, coherent and visible across the programme experience." },
-];
-
 const frameworks: FrameworkPage[] = [
   {
     key: "greencomp",
@@ -35,7 +27,7 @@ const frameworks: FrameworkPage[] = [
     family: "European Frameworks",
     status: "active",
     version: "2022",
-    purpose: "Sustainability competence framework for curriculum evidence mapping.",
+    purpose: "Sustainability competence framework for curriculum design and evidence discussion.",
     overview: "GreenComp gives programme teams a shared language for sustainability values, complexity, futures and action.",
     sourceUrl: "https://joint-research-centre.ec.europa.eu/greencomp-european-sustainability-competence-framework_en",
     domains: [
@@ -90,7 +82,7 @@ const frameworks: FrameworkPage[] = [
     family: "European Frameworks",
     status: "active",
     version: "3.0",
-    purpose: "Digital competence framework for digital participation, content, safety and problem solving.",
+    purpose: "Digital competence framework for participation, content creation, safety and problem solving.",
     overview: "DigComp gives a common structure for digital competence evidence across learning, work and civic participation.",
     sourceUrl: "https://data.jrc.ec.europa.eu/collection/id-00414",
     domains: [
@@ -157,7 +149,7 @@ export default function FrameworkHub() {
       <div className="mx-auto max-w-7xl space-y-6 p-4 sm:p-6">
         <Link href="/frameworks" className="inline-flex items-center gap-2 text-sm font-medium text-blue-700">
           <ArrowLeft className="h-4 w-4" />
-          Framework Hub
+          Framework Library
         </Link>
         <section className="rounded border border-slate-200 bg-white p-6 shadow-sm">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
@@ -166,7 +158,7 @@ export default function FrameworkHub() {
                 <Badge variant="outline">{selected.family}</Badge>
                 {selected.version && <Badge variant="secondary">Version {selected.version}</Badge>}
                 <Badge className={selected.status === "active" ? "bg-emerald-100 text-emerald-800 hover:bg-emerald-100" : "bg-slate-100 text-slate-700 hover:bg-slate-100"}>
-                  {selected.status === "active" ? "Layer ready" : "Foundation"}
+                  {selected.status === "active" ? "Available" : "Foundation"}
                 </Badge>
               </div>
               <h1 className="text-3xl font-bold tracking-tight text-slate-950">{selected.name}</h1>
@@ -208,8 +200,15 @@ export default function FrameworkHub() {
                 <p>{selected.castUse}</p>
                 <p>{selected.mapInterpretation}</p>
                 <div className="rounded border border-amber-200 bg-amber-50 px-3 py-2 text-amber-900">
-                  Visual intelligence may include provisional analysis. Human review is required before formal reporting.
+                  Framework intelligence appears in Module Builder, Programme Workspace and Programme Maps. This library explains framework meaning, structure and use.
                 </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader><CardTitle className="flex items-center gap-2"><Sparkles className="h-5 w-5" />Example Uses</CardTitle></CardHeader>
+              <CardContent className="grid gap-2 md:grid-cols-3">
+                {selected.examples.map((example) => <div key={example} className="rounded border border-slate-200 px-3 py-2 text-sm text-slate-600">{example}</div>)}
               </CardContent>
             </Card>
           </section>
@@ -224,22 +223,15 @@ export default function FrameworkHub() {
             </Card>
 
             <Card>
-              <CardHeader><CardTitle className="flex items-center gap-2"><ShieldCheck className="h-5 w-5" />Evidence Maturity</CardTitle></CardHeader>
-              <CardContent className="space-y-4">
-                {maturityLevels.map((level) => (
-                  <div key={level.label}>
-                    <div className="mb-1 flex items-center justify-between text-sm"><span className="font-medium">{level.label}</span><span className="text-xs text-slate-500">{level.value}%</span></div>
-                    <Progress value={level.value} />
-                    <p className="mt-1 text-xs text-slate-500">{level.text}</p>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-
-            <Card>
-              <CardHeader><CardTitle className="flex items-center gap-2"><Sparkles className="h-5 w-5" />Example Evidence</CardTitle></CardHeader>
-              <CardContent className="space-y-2">
-                {selected.examples.map((example) => <div key={example} className="rounded border border-slate-200 px-3 py-2 text-sm text-slate-600">{example}</div>)}
+              <CardHeader><CardTitle className="flex items-center gap-2"><Settings2 className="h-5 w-5" />Framework Management</CardTitle></CardHeader>
+              <CardContent className="space-y-3 text-sm text-slate-600">
+                <p>Create, import and manage custom frameworks here as CAST framework authoring is expanded.</p>
+                <div className="grid gap-2">
+                  <Button variant="outline" disabled>Create Framework</Button>
+                  <Button variant="outline" disabled>Import Framework</Button>
+                  <Button variant="outline" disabled>Manage Versions</Button>
+                </div>
+                <p className="text-xs text-slate-500">Current seeded frameworks remain managed by CAST system seeds.</p>
               </CardContent>
             </Card>
           </aside>
@@ -253,19 +245,35 @@ export default function FrameworkHub() {
       <section className="rounded border border-slate-200 bg-white p-6 shadow-sm">
         <div className="flex flex-col gap-3 lg:flex-row lg:items-end lg:justify-between">
           <div>
-            <h1 className="text-3xl font-bold tracking-tight text-slate-950">Framework Hub</h1>
+            <h1 className="text-3xl font-bold tracking-tight text-slate-950">Framework Library</h1>
             <p className="mt-2 max-w-3xl text-sm leading-6 text-slate-600">
-              Explore the frameworks CAST can use as programme map layers. Each layer shares the same evidence maturity language: None, Developing, Consolidating and Leading.
+              Learn what each framework means, how it is structured, and how CAST can use it as curriculum evidence context. Coverage, gaps and maturity intelligence live in Module Builder, Programme Workspace and Programme Maps.
             </p>
           </div>
-          <Button asChild>
+          <Button asChild variant="outline">
             <Link href="/programme/map">
-              Open Programme Map
+              View Framework Intelligence
               <Map className="ml-2 h-4 w-4" />
             </Link>
           </Button>
         </div>
       </section>
+
+      <Card className="border-blue-100 bg-blue-50/60">
+        <CardContent className="grid gap-4 p-5 lg:grid-cols-[1fr_auto] lg:items-center">
+          <div>
+            <h2 className="font-semibold text-slate-950">Custom Framework Management</h2>
+            <p className="mt-1 text-sm leading-6 text-slate-600">
+              Framework Library is the home for creating, importing and managing framework definitions, versions and metadata. Authoring controls are intentionally separate from curriculum intelligence views.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button variant="outline" disabled><Sparkles className="mr-2 h-4 w-4" />Create Framework</Button>
+            <Button variant="outline" disabled><Upload className="mr-2 h-4 w-4" />Import Framework</Button>
+            <Button variant="outline" disabled><Settings2 className="mr-2 h-4 w-4" />Manage Frameworks</Button>
+          </div>
+        </CardContent>
+      </Card>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
         {frameworks.map((framework) => (
@@ -276,7 +284,7 @@ export default function FrameworkHub() {
                 <h2 className="mt-3 text-lg font-semibold text-slate-950 group-hover:text-blue-700">{framework.name}</h2>
               </div>
               <Badge className={framework.status === "active" ? "bg-emerald-100 text-emerald-800 hover:bg-emerald-100" : "bg-slate-100 text-slate-700 hover:bg-slate-100"}>
-                {framework.status === "active" ? "Active" : "Foundation"}
+                {framework.status === "active" ? "Available" : "Foundation"}
               </Badge>
             </div>
             <p className="mt-3 text-sm leading-6 text-slate-600">{framework.purpose}</p>

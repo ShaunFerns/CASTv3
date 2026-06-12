@@ -81,7 +81,7 @@ const authenticatedNavGroups: NavGroup[] = [
     id: "frameworks",
     label: "Frameworks",
     items: [
-      { href: "/frameworks", label: "Framework Hub", icon: Layers3, exact: false, tourId: "nav-framework-hub" },
+      { href: "/frameworks", label: "Framework Library", icon: Layers3, exact: false, tourId: "nav-framework-hub" },
     ],
   },
   {
