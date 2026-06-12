@@ -4,6 +4,7 @@ import {
   ArrowRight,
   BookOpen,
   CheckCircle2,
+  ChevronDown,
   ClipboardCheck,
   FileSearch,
   Layers,
@@ -15,6 +16,8 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 
 type ModuleSummary = {
   id: string;
@@ -212,6 +215,53 @@ function maturityText(distribution: Record<string, number>) {
   return parts.length ? parts.map(([key, value]) => `${key}: ${value}`).join(", ") : "No maturity observations";
 }
 
+function primaryMaturity(distribution: Record<string, number>) {
+  const order = ["leading", "consolidating", "developing", "none"];
+  return order.find((key) => (distribution[key] ?? 0) > 0) ?? "none";
+}
+
+function maturityLabel(value: string) {
+  const labels: Record<string, string> = {
+    none: "None",
+    developing: "Developing",
+    consolidating: "Consolidating",
+    leading: "Leading",
+  };
+  return labels[value] ?? value.replace(/_/g, " ");
+}
+
+function statusLabel(counts: Record<string, number>) {
+  const reviewed = (counts.accepted ?? 0) + (counts.amended ?? 0);
+  const total = Object.values(counts).reduce((sum, count) => sum + count, 0);
+  if (reviewed > 0) return `${reviewed} reviewed`;
+  if (total > 0) return "Provisional";
+  return "No observations";
+}
+
+function frameworkRows(detail: ModuleBuilderDetail) {
+  return ["greencomp", "digcomp", "entrecomp"].map((key) => detail.frameworkEvidenceSummary.find((framework) => framework.key === key) ?? {
+    key,
+    name: key === "greencomp" ? "GreenComp" : key === "digcomp" ? "DigComp" : "EntreComp",
+    evaluationCount: 0,
+    evidenceLinkCount: 0,
+    maturityDistribution: {},
+    reviewStatusCounts: {},
+    competencies: [],
+  });
+}
+
+function cleanSectionHeading(section: ModuleBuilderDetail["descriptorSections"][number]) {
+  const title = section.title?.trim();
+  if (title) return title;
+  return section.sectionType.replace(/_/g, " ").replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function sectionMeta(section: ModuleBuilderDetail["descriptorSections"][number]) {
+  const heading = cleanSectionHeading(section).toLowerCase();
+  const type = section.sectionType.replace(/_/g, " ");
+  return heading === type.toLowerCase() ? null : type;
+}
+
 function SectionCard({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <Card className="border-slate-200 shadow-sm">
@@ -292,6 +342,50 @@ function AssessmentVisualSummary({ components }: { components: ModuleBuilderDeta
           {Object.keys(byType).length === 0 && <Badge variant="outline">No assessment type evidence</Badge>}
         </div>
       </div>
+    </div>
+  );
+}
+
+function FrameworkRadar({ frameworks }: { frameworks: ReturnType<typeof frameworkRows> }) {
+  const max = Math.max(1, ...frameworks.map((framework) => framework.evaluationCount));
+  return (
+    <div className="space-y-3">
+      {frameworks.map((framework) => {
+        const width = Math.max(6, (framework.evaluationCount / max) * 100);
+        return (
+          <div key={framework.key} className="grid gap-2 text-sm sm:grid-cols-[110px_1fr_80px] sm:items-center">
+            <span className="font-medium text-slate-700">{framework.name}</span>
+            <div className="h-3 overflow-hidden rounded-full bg-slate-100">
+              <div className="h-full rounded-full bg-cyan-600" style={{ width: `${width}%` }} />
+            </div>
+            <span className="text-right text-slate-500">{framework.evaluationCount} signals</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function FrameworkSummaryCards({ frameworks }: { frameworks: ReturnType<typeof frameworkRows> }) {
+  return (
+    <div className="grid gap-3 md:grid-cols-3">
+      {frameworks.map((framework) => (
+        <div key={framework.key} className="rounded border border-slate-200 bg-white p-4">
+          <div className="flex items-start justify-between gap-3">
+            <div>
+              <div className="font-semibold text-slate-950">{framework.name}</div>
+              <div className="mt-1 text-sm text-slate-500">{statusLabel(framework.reviewStatusCounts)}</div>
+            </div>
+            <Badge variant="outline">{framework.evidenceLinkCount} evidence</Badge>
+          </div>
+          <div className="mt-4 flex items-center justify-between gap-3">
+            <span className="text-sm text-slate-600">Evidence maturity</span>
+            <Badge className="bg-cyan-100 text-cyan-800 hover:bg-cyan-100">
+              {maturityLabel(primaryMaturity(framework.maturityDistribution))}
+            </Badge>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -522,28 +616,101 @@ export default function ModuleBuilder() {
             </CardContent>
           </Card>
 
-          <div className="grid gap-6 xl:grid-cols-[1fr_360px]">
-            <div className="space-y-6">
-              <SectionCard title="Module Overview">
-                <div className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-4">
+          <Tabs defaultValue="overview" className="space-y-5">
+            <TabsList className="grid h-auto w-full grid-cols-2 gap-1 bg-slate-100 p-1 md:grid-cols-5">
+              <TabsTrigger value="overview">Overview</TabsTrigger>
+              <TabsTrigger value="evidence">Evidence</TabsTrigger>
+              <TabsTrigger value="assessment">Assessment</TabsTrigger>
+              <TabsTrigger value="frameworks">Frameworks</TabsTrigger>
+              <TabsTrigger value="review">Review</TabsTrigger>
+            </TabsList>
+
+            <TabsContent value="overview" className="space-y-6">
+              <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                {[
+                  ["Data Quality", `${module.dataQualityFlags.length} flag${module.dataQualityFlags.length === 1 ? "" : "s"}`],
+                  ["Evidence", `${module.evidenceCount} item${module.evidenceCount === 1 ? "" : "s"}`],
+                  ["Learning Outcomes", `${detail.learningOutcomes.length}`],
+                  ["Assessments", `${detail.assessmentComponents.length}`],
+                ].map(([label, value]) => (
+                  <Card key={label} className="border-slate-200">
+                    <CardContent className="p-4">
+                      <div className="text-xs font-medium uppercase tracking-wide text-slate-500">{label}</div>
+                      <div className="mt-2 text-2xl font-semibold text-slate-950">{value}</div>
+                    </CardContent>
+                  </Card>
+                ))}
+              </div>
+
+              <SectionCard title="Module Summary">
+                <div className="grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-5">
                   <span><strong>Code:</strong> {module.moduleCode ?? "-"}</span>
                   <span><strong>Title:</strong> {module.moduleTitle ?? "-"}</span>
                   <span><strong>Credits:</strong> {module.credits ?? "-"}</span>
-                  <span><strong>Status:</strong> {module.recordKind === "source_only" ? "Imported source only" : "Curated module"}</span>
+                  <span><strong>Stage:</strong> {module.stage ?? "-"}</span>
+                  <span><strong>Semester:</strong> {module.semester ?? "-"}</span>
                 </div>
               </SectionCard>
 
+              <SectionCard title="Framework Summary">
+                <FrameworkSummaryCards frameworks={frameworkRows(detail)} />
+              </SectionCard>
+
+              <div className="grid gap-6 xl:grid-cols-[1fr_360px]">
+                <SectionCard title="Framework Radar">
+                  <FrameworkRadar frameworks={frameworkRows(detail)} />
+                </SectionCard>
+                <SectionCard title="Coverage Summary">
+                  <div className="space-y-3 text-sm text-slate-700">
+                    <div className="flex justify-between gap-3"><span>Descriptor sections</span><strong>{detail.descriptorSections.length}</strong></div>
+                    <div className="flex justify-between gap-3"><span>Evidence-linked framework observations</span><strong>{frameworkRows(detail).reduce((sum, framework) => sum + framework.evidenceLinkCount, 0)}</strong></div>
+                    <div className="flex justify-between gap-3"><span>Claims generated</span><strong>{claims.length}</strong></div>
+                    <div className="flex justify-between gap-3"><span>Reviewed findings</span><strong>{claims.filter((claim) => claim.review.isInstitutionalFinding).length}</strong></div>
+                  </div>
+                </SectionCard>
+              </div>
+
+              <SectionCard title="Improvement Prompts">
+                {detail.improvementPrompts.length > 0 ? (
+                  <div className="grid gap-3 md:grid-cols-2">
+                    {detail.improvementPrompts.map((prompt) => (
+                      <div key={`${prompt.relatedSection}-${prompt.title}`} className={`rounded border p-3 ${priorityClass(prompt.priority)}`}>
+                        <div className="flex items-start gap-3">
+                          <Lightbulb className="mt-0.5 h-4 w-4 shrink-0" />
+                          <div>
+                            <div className="font-semibold">{prompt.title}</div>
+                            <p className="mt-1 text-sm leading-5 opacity-90">{prompt.explanation}</p>
+                            <div className="mt-2 flex flex-wrap gap-2 text-xs">
+                              <Badge variant="outline" className="bg-white/70">{prompt.relatedSection}</Badge>
+                              <Badge variant="outline" className="bg-white/70">{prompt.priority} priority</Badge>
+                              <Badge variant="outline" className="bg-white/70">{prompt.evidenceCount} source{prompt.evidenceCount === 1 ? "" : "s"}</Badge>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : <EmptyState text="No deterministic improvement prompts are currently suggested for this module." />}
+              </SectionCard>
+            </TabsContent>
+
+            <TabsContent value="evidence" className="space-y-6">
               <SectionCard title="Descriptor Evidence">
                 {detail.descriptorSections.length > 0 ? (
                   <div className="space-y-3">
                     {detail.descriptorSections.map((section) => (
-                      <div key={section.id} className="rounded border border-slate-200 bg-white p-4">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <Badge variant="outline">{section.sectionType.replace(/_/g, " ")}</Badge>
-                          <span className="font-semibold text-slate-950">{section.title ?? "Descriptor section"}</span>
-                        </div>
-                        <p className="mt-2 line-clamp-5 whitespace-pre-wrap text-sm leading-6 text-slate-600">{section.content || "No section text."}</p>
-                      </div>
+                      <Collapsible key={section.id} className="rounded border border-slate-200 bg-white">
+                        <CollapsibleTrigger className="flex w-full items-center justify-between gap-3 px-4 py-3 text-left">
+                          <div>
+                            <div className="font-semibold text-slate-950">{cleanSectionHeading(section)}</div>
+                            {sectionMeta(section) && <div className="mt-1 text-xs text-slate-500">{sectionMeta(section)}</div>}
+                          </div>
+                          <ChevronDown className="h-4 w-4 text-slate-500" aria-hidden="true" />
+                        </CollapsibleTrigger>
+                        <CollapsibleContent className="border-t border-slate-100 px-4 pb-4 pt-3">
+                          <p className="whitespace-pre-wrap text-sm leading-6 text-slate-600">{section.content || "No section text."}</p>
+                        </CollapsibleContent>
+                      </Collapsible>
                     ))}
                   </div>
                 ) : <EmptyState text="No descriptor sections are available for this module yet." />}
@@ -566,6 +733,12 @@ export default function ModuleBuilder() {
                   </div>
                 ) : <EmptyState text="No structured learning outcomes are available yet." />}
               </SectionCard>
+            </TabsContent>
+
+            <TabsContent value="assessment" className="space-y-6">
+              <SectionCard title="Assessment Visual Summary">
+                <AssessmentVisualSummary components={detail.assessmentComponents} />
+              </SectionCard>
 
               <SectionCard title="Assessment Components">
                 {detail.assessmentComponents.length > 0 ? (
@@ -587,50 +760,76 @@ export default function ModuleBuilder() {
                   </div>
                 ) : <EmptyState text="No structured assessment components are available yet." />}
               </SectionCard>
+            </TabsContent>
 
-              <SectionCard title="Assessment Visual Summary">
-                <AssessmentVisualSummary components={detail.assessmentComponents} />
-              </SectionCard>
-
-              <SectionCard title="Framework Evidence Summary">
+            <TabsContent value="frameworks" className="space-y-6">
+              <SectionCard title="Framework Evidence">
                 <div className="mb-4 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900">
-                  Framework observations are evidence summaries for review. GreenComp claim generation is available below; DigComp and EntreComp are currently surfaced as evidence summaries until claim generation is extended.
+                  Framework observations are evidence summaries for review. GreenComp claim generation is available in the Review tab; DigComp and EntreComp are currently surfaced as evidence summaries until claim generation is extended.
                 </div>
                 <div className="space-y-4">
-                  {["greencomp", "digcomp", "entrecomp"].map((key) => detail.frameworkEvidenceSummary.find((framework) => framework.key === key) ?? {
-                      key,
-                      name: key === "greencomp" ? "GreenComp" : key === "digcomp" ? "DigComp" : "EntreComp",
-                      evaluationCount: 0,
-                      evidenceLinkCount: 0,
-                      maturityDistribution: {},
-                      reviewStatusCounts: {},
-                      competencies: [],
-                    }).map((framework) => (
-                    <div key={framework.key} className="rounded border border-slate-200 bg-white p-4">
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <h3 className="font-semibold text-slate-950">{framework.name}</h3>
-                        <Badge variant="outline">{framework.evaluationCount} observations</Badge>
-                      </div>
-                      <p className="mt-2 text-sm text-slate-600">{framework.evidenceLinkCount} linked evidence references | {maturityText(framework.maturityDistribution)}</p>
-                      <div className="mt-3 space-y-2">
-                        {framework.competencies.length === 0 && (
-                          <div className="rounded bg-slate-50 px-3 py-2 text-sm text-slate-500">
-                            No {framework.name} evidence observations are available for this module yet.
-                          </div>
-                        )}
-                        {framework.competencies.slice(0, 6).map((competency, index) => (
-                          <div key={`${competency.id ?? competency.name}-${index}`} className="rounded bg-slate-50 px-3 py-2 text-sm">
-                            <div className="font-medium text-slate-800">{competency.name}</div>
-                            <div className="text-xs text-slate-500">{competency.domain ?? "No domain"} | {competency.observedLevel} | {competency.status}</div>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
+                  {frameworkRows(detail).map((framework) => (
+                    <Collapsible key={framework.key} className="rounded border border-slate-200 bg-white">
+                      <CollapsibleTrigger className="flex w-full flex-wrap items-center justify-between gap-3 px-4 py-3 text-left">
+                        <div>
+                          <h3 className="font-semibold text-slate-950">{framework.name}</h3>
+                          <p className="mt-1 text-sm text-slate-600">
+                            {maturityLabel(primaryMaturity(framework.maturityDistribution))} maturity | {framework.evidenceLinkCount} evidence links | {statusLabel(framework.reviewStatusCounts)}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Badge variant="outline">{framework.evaluationCount} observations</Badge>
+                          <ChevronDown className="h-4 w-4 text-slate-500" aria-hidden="true" />
+                        </div>
+                      </CollapsibleTrigger>
+                      <CollapsibleContent className="border-t border-slate-100 px-4 pb-4 pt-3">
+                        <div className="space-y-2">
+                          {framework.competencies.length === 0 && (
+                            <div className="rounded bg-slate-50 px-3 py-2 text-sm text-slate-500">
+                              No {framework.name} evidence observations are available for this module yet.
+                            </div>
+                          )}
+                          {framework.competencies.map((competency, index) => (
+                            <div key={`${competency.id ?? competency.name}-${index}`} className="rounded bg-slate-50 px-3 py-2 text-sm">
+                              <div className="font-medium text-slate-800">{competency.name}</div>
+                              <div className="text-xs text-slate-500">{competency.domain ?? "No domain"} | {maturityLabel(competency.observedLevel)} | {competency.status} | {competency.evidenceLinkCount} evidence links</div>
+                              {competency.rationale && <p className="mt-2 text-slate-600">{competency.rationale}</p>}
+                            </div>
+                          ))}
+                        </div>
+                      </CollapsibleContent>
+                    </Collapsible>
                   ))}
                 </div>
               </SectionCard>
 
-              <SectionCard title="Evidence Claims">
+              <div className="grid gap-6 xl:grid-cols-2">
+                <SectionCard title="Assessment Design Summary">
+                  <DesignSummaryPanel title="Assessment design" summary={detail.assessmentDesignSummary} />
+                </SectionCard>
+
+                <SectionCard title="Modality Design Summary">
+                  <DesignSummaryPanel title="Modality design" summary={detail.modalityDesignSummary} />
+                </SectionCard>
+              </div>
+
+              <SectionCard title="UDL Foundation">
+                <div className="grid gap-3 md:grid-cols-3">
+                  {detail.udlFoundation.map((area) => (
+                    <div key={area.key} className="rounded border border-slate-200 bg-white p-3">
+                      <div className="flex items-center justify-between gap-3">
+                        <div className="font-semibold text-slate-950">{area.name}</div>
+                        <Badge variant="outline">{area.evidenceCount} signals</Badge>
+                      </div>
+                      <p className="mt-2 text-sm leading-5 text-slate-600">{area.description}</p>
+                    </div>
+                  ))}
+                </div>
+              </SectionCard>
+            </TabsContent>
+
+            <TabsContent value="review" className="space-y-6">
+              <SectionCard title="Evidence Claims and Human Review">
                 <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                   <div className="text-sm leading-6 text-slate-600">
                     Provisional GreenComp claims link module evidence to a traceable analysis run. They are not institutional findings.
@@ -652,17 +851,25 @@ export default function ModuleBuilder() {
                 ) : claims.length > 0 ? (
                   <div className="space-y-4">
                     {claims.map((claim) => (
-                      <div key={claim.id} className="rounded border border-slate-200 bg-white p-4">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <Badge className={claim.review.isInstitutionalFinding ? "bg-emerald-100 text-emerald-800 hover:bg-emerald-100" : "bg-violet-100 text-violet-800 hover:bg-violet-100"}>
-                            {claim.review.isInstitutionalFinding ? "Reviewed finding" : "AI-supported claim"}
-                          </Badge>
-                          <Badge className={reviewStatusClass(claim.review.status)}>Review: {reviewStatusLabel(claim.review.status)}</Badge>
-                          <Badge variant="outline">{claim.framework?.name ?? "Framework"} {claim.framework?.versionLabel ?? ""}</Badge>
-                          <Badge variant="outline">{confidenceLabel(claim.confidence)}</Badge>
-                        </div>
-                        <h3 className="mt-3 font-semibold text-slate-950">{claim.title ?? "Evidence claim"}</h3>
-                        <p className="mt-2 text-sm leading-6 text-slate-700">{claim.claimText}</p>
+                      <Collapsible key={claim.id} className="rounded border border-slate-200 bg-white">
+                        <CollapsibleTrigger className="flex w-full items-start justify-between gap-4 px-4 py-4 text-left">
+                          <div>
+                            <div className="flex flex-wrap items-center gap-2">
+                              <Badge className={claim.review.isInstitutionalFinding ? "bg-emerald-100 text-emerald-800 hover:bg-emerald-100" : "bg-violet-100 text-violet-800 hover:bg-violet-100"}>
+                                {claim.review.isInstitutionalFinding ? "Reviewed finding" : "AI-supported claim"}
+                              </Badge>
+                              <Badge className={reviewStatusClass(claim.review.status)}>Review: {reviewStatusLabel(claim.review.status)}</Badge>
+                              <Badge variant="outline">{claim.framework?.name ?? "Framework"} {claim.framework?.versionLabel ?? ""}</Badge>
+                              <Badge variant="outline">{claim.evidence.length} evidence links</Badge>
+                              <Badge variant="outline">{confidenceLabel(claim.confidence)}</Badge>
+                            </div>
+                            <h3 className="mt-3 font-semibold text-slate-950">{claim.title ?? "Evidence claim"}</h3>
+                            <p className="mt-2 line-clamp-2 text-sm leading-6 text-slate-600">{claim.claimText}</p>
+                          </div>
+                          <ChevronDown className="mt-1 h-4 w-4 shrink-0 text-slate-500" aria-hidden="true" />
+                        </CollapsibleTrigger>
+                        <CollapsibleContent className="border-t border-slate-100 px-4 pb-4 pt-3">
+                        <p className="text-sm leading-6 text-slate-700">{claim.claimText}</p>
                         {claim.review.isInstitutionalFinding && claim.review.findingText && (
                           <div className="mt-3 rounded border border-emerald-200 bg-emerald-50 p-3 text-sm text-emerald-900">
                             <div className="font-semibold">Reviewed Finding</div>
@@ -744,41 +951,18 @@ export default function ModuleBuilder() {
                             </div>
                           )}
                         </div>
-                      </div>
+                        </CollapsibleContent>
+                      </Collapsible>
                     ))}
                   </div>
                 ) : (
                   <EmptyState text={module.moduleId ? "No evidence claims have been generated for this module yet." : "Create or reconcile a curated module before generating evidence claims."} />
                 )}
               </SectionCard>
-            </div>
-
-            <aside className="space-y-6">
-              <SectionCard title="Assessment Design Summary">
-                <DesignSummaryPanel title="Assessment design" summary={detail.assessmentDesignSummary} />
-              </SectionCard>
-
-              <SectionCard title="Modality Design Summary">
-                <DesignSummaryPanel title="Modality design" summary={detail.modalityDesignSummary} />
-              </SectionCard>
-
-              <SectionCard title="UDL Foundation">
-                <div className="space-y-3">
-                  {detail.udlFoundation.map((area) => (
-                    <div key={area.key} className="rounded border border-slate-200 bg-white p-3">
-                      <div className="flex items-center justify-between gap-3">
-                        <div className="font-semibold text-slate-950">{area.name}</div>
-                        <Badge variant="outline">{area.evidenceCount} signals</Badge>
-                      </div>
-                      <p className="mt-2 text-sm leading-5 text-slate-600">{area.description}</p>
-                    </div>
-                  ))}
-                </div>
-              </SectionCard>
 
               <SectionCard title="Data Quality Indicators">
                 {detail.dataQualityIndicators.length > 0 ? (
-                  <div className="space-y-2">
+                  <div className="grid gap-2 md:grid-cols-2">
                     {detail.dataQualityIndicators.map((flag) => (
                       <div key={flag.id} className="rounded border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
                         <div className="font-semibold">{flag.title}</div>
@@ -789,31 +973,8 @@ export default function ModuleBuilder() {
                 ) : <EmptyState text="No data quality indicators are currently linked to this module." />}
               </SectionCard>
 
-              <SectionCard title="Improvement Prompts">
-                {detail.improvementPrompts.length > 0 ? (
-                  <div className="space-y-3">
-                    {detail.improvementPrompts.map((prompt) => (
-                      <div key={`${prompt.relatedSection}-${prompt.title}`} className={`rounded border p-3 ${priorityClass(prompt.priority)}`}>
-                        <div className="flex items-start gap-3">
-                          <Lightbulb className="mt-0.5 h-4 w-4 shrink-0" />
-                          <div>
-                            <div className="font-semibold">{prompt.title}</div>
-                            <p className="mt-1 text-sm leading-5 opacity-90">{prompt.explanation}</p>
-                            <div className="mt-2 flex flex-wrap gap-2 text-xs">
-                              <Badge variant="outline" className="bg-white/70">{prompt.relatedSection}</Badge>
-                              <Badge variant="outline" className="bg-white/70">{prompt.priority} priority</Badge>
-                              <Badge variant="outline" className="bg-white/70">{prompt.evidenceCount} source{prompt.evidenceCount === 1 ? "" : "s"}</Badge>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                ) : <EmptyState text="No deterministic improvement prompts are currently suggested for this module." />}
-              </SectionCard>
-
               <SectionCard title="Next Steps">
-                <div className="space-y-3">
+                <div className="grid gap-3 md:grid-cols-2">
                   {detail.nextSteps.map((step) => (
                     <div key={step} className="flex gap-3 text-sm text-slate-700">
                       <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />
@@ -822,8 +983,8 @@ export default function ModuleBuilder() {
                   ))}
                 </div>
               </SectionCard>
-            </aside>
-          </div>
+            </TabsContent>
+          </Tabs>
         </>
       ) : (
         <div className="space-y-6">
