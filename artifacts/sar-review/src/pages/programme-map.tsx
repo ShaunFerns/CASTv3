@@ -359,6 +359,16 @@ function DesignLayerPanel({ title, summary }: { title: string; summary?: DesignL
             </div>
           ))}
         </div>
+        {summary?.layerKey === "assessment-design" && summary.assessmentTypeMix && (
+          <div>
+            <div className="mb-2 text-sm font-semibold text-slate-900">Assessment type mix</div>
+            <div className="flex flex-wrap gap-2">
+              {Object.entries(summary.assessmentTypeMix).map(([type, count]) => (
+                <Badge key={type} variant="outline">{type}: {count}</Badge>
+              ))}
+            </div>
+          </div>
+        )}
         <div className="grid grid-cols-4 gap-2 text-center text-xs">
           {maturityLevels.map((level) => (
             <div key={level} className="rounded border border-cyan-100 bg-cyan-50 p-2">
@@ -717,6 +727,17 @@ export default function ProgrammeMapPage() {
                                         {row.layers.map((layer) => {
                                           const style = styleForFamily(layer.family ?? "system");
                                           if (layer.key.startsWith("framework:") && layer.indicators && layer.indicators.length > 0) {
+                                            if (layer.key === "framework:assessment-design") {
+                                              const evidenceCount = layer.indicators.reduce((sum, indicator) => sum + (indicator.evidenceCount ?? 0), 0);
+                                              const leadingIndicator = layer.indicators[0];
+                                              return (
+                                                <span key={layer.key} className="inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] font-medium" style={{ backgroundColor: style.background, color: style.text }}>
+                                                  <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: style.dot }} />
+                                                  Assessment: {layer.indicators.length} signal{layer.indicators.length === 1 ? "" : "s"}, {evidenceCount} evidence
+                                                  <span className="text-slate-500">({evidenceMaturityLabel(leadingIndicator.observedLevel)}, {leadingIndicator.analysisScope ?? "provisional"})</span>
+                                                </span>
+                                              );
+                                            }
                                             return layer.indicators.map((indicator) => (
                                               <span key={indicator.evaluationId} className="inline-flex items-center gap-1 rounded px-2 py-1 text-[11px] font-medium" style={{ backgroundColor: style.background, color: style.text }}>
                                                 <span className="h-1.5 w-1.5 rounded-full" style={{ backgroundColor: style.dot }} />

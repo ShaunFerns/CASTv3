@@ -38,6 +38,7 @@ type SourceStructureItemRow = typeof sourceStructureItemsTable.$inferSelect;
 type CuratedStructureItemRow = typeof curatedStructureItemsTable.$inferSelect;
 type ModuleRow = typeof modulesTable.$inferSelect;
 type ModuleDescriptorRow = typeof moduleDescriptorsTable.$inferSelect;
+type AssessmentComponentRow = typeof assessmentComponentsTable.$inferSelect;
 type AiClaimRow = typeof aiClaimsTable.$inferSelect;
 type HumanReviewRow = typeof humanReviewsTable.$inferSelect;
 
@@ -189,6 +190,36 @@ function maturityDistribution() {
   return { none: 0, developing: 0, consolidating: 0, leading: 0 };
 }
 
+function normaliseAssessmentType(component: AssessmentComponentRow) {
+  const text = `${component.componentType ?? ""} ${component.componentName ?? ""} ${component.assessmentMode ?? ""}`.toLowerCase();
+  if (/(exam|test|quiz|mcq)/.test(text)) return "Exam";
+  if (/(project|capstone|dissertation)/.test(text)) return "Project";
+  if (/portfolio/.test(text)) return "Portfolio";
+  if (/(presentation|pitch|viva)/.test(text)) return "Presentation";
+  if (/(practical|lab|laboratory|studio|fieldwork|workshop)/.test(text)) return "Practical";
+  if (/(reflect|journal|logbook)/.test(text)) return "Reflective";
+  if (/(report|essay|paper|case study)/.test(text)) return "Report";
+  return "Other";
+}
+
+function assessmentTriangleContribution(component: AssessmentComponentRow) {
+  const metadata = component.metadata ?? {};
+  const text = `${component.componentName ?? ""} ${component.componentType ?? ""} ${component.assessmentMode ?? ""} ${component.description ?? ""} ${Object.values(metadata).join(" ")}`.toLowerCase();
+  if (/(reflect|journal|self|peer|portfolio|learning log|critique)/.test(text)) return "as_learning";
+  if (/(formative|feedback|feedforward|draft|review|workshop)/.test(text)) return "for_learning";
+  return "of_learning";
+}
+
+function indicatorBand(value: number, thresholds: { low: number; high: number }) {
+  if (value < thresholds.low) return "Low";
+  if (value >= thresholds.high) return "High";
+  return "Moderate";
+}
+
+function incrementRecord(record: Record<string, number>, key: string, amount = 1) {
+  record[key] = (record[key] ?? 0) + amount;
+}
+
 function latestReviewsByClaim(reviews: HumanReviewRow[]): Map<string, HumanReviewRow> {
   const byClaim = new Map<string, HumanReviewRow>();
   for (const review of [...reviews].sort((a, b) => (b.createdAt?.getTime() ?? 0) - (a.createdAt?.getTime() ?? 0))) {
@@ -212,6 +243,122 @@ function moduleDisplay(module: ModuleRow | undefined, fallback?: CuratedStructur
   return {
     code: module?.moduleCode ?? null,
     title: module?.moduleTitle ?? fallback?.label ?? null,
+  };
+}
+
+function buildAssessmentIntelligence(input: {
+  items: CuratedStructureItemRow[];
+  moduleIds: string[];
+  moduleById: Map<string, ModuleRow>;
+  assessments: AssessmentComponentRow[];
+  descriptorToModule: Map<string, string>;
+}) {
+  const itemByModule = new Map<string, CuratedStructureItemRow>();
+  for (const item of input.items) {
+    if (item.moduleId && !itemByModule.has(item.moduleId)) itemByModule.set(item.moduleId, item);
+  }
+
+  const typeDistribution: Record<string, number> = {};
+  const weightingByType: Record<string, number> = {};
+  const triangle = { ofLearning: 0, forLearning: 0, asLearning: 0 };
+  const moduleAssessmentTypes = new Map<string, Set<string>>();
+  const moduleAssessmentCounts = new Map<string, number>();
+  const moduleAssessmentWeighting = new Map<string, number>();
+  const semesterBuckets = new Map<string, { stage: string; semester: string; assessmentCount: number; totalWeighting: number; types: Set<string>; modules: Set<string> }>();
+
+  for (const component of input.assessments) {
+    const moduleId = input.descriptorToModule.get(component.moduleDescriptorId);
+    const type = normaliseAssessmentType(component);
+    const weighting = Number(component.weighting) || 0;
+    incrementRecord(typeDistribution, type);
+    incrementRecord(weightingByType, type, weighting);
+
+    const contribution = assessmentTriangleContribution(component);
+    if (contribution === "as_learning") triangle.asLearning += 1;
+    else if (contribution === "for_learning") triangle.forLearning += 1;
+    else triangle.ofLearning += 1;
+
+    if (!moduleId) continue;
+    moduleAssessmentCounts.set(moduleId, (moduleAssessmentCounts.get(moduleId) ?? 0) + 1);
+    moduleAssessmentWeighting.set(moduleId, (moduleAssessmentWeighting.get(moduleId) ?? 0) + weighting);
+    const typeSet = moduleAssessmentTypes.get(moduleId) ?? new Set<string>();
+    typeSet.add(type);
+    moduleAssessmentTypes.set(moduleId, typeSet);
+
+    const item = itemByModule.get(moduleId);
+    const stage = item?.stage ?? "Unknown";
+    const semester = item?.semester ?? "Unknown";
+    const key = `${stage}::${semester}`;
+    const bucket = semesterBuckets.get(key) ?? { stage, semester, assessmentCount: 0, totalWeighting: 0, types: new Set<string>(), modules: new Set<string>() };
+    bucket.assessmentCount += 1;
+    bucket.totalWeighting += weighting;
+    bucket.types.add(type);
+    bucket.modules.add(moduleId);
+    semesterBuckets.set(key, bucket);
+  }
+
+  const totalAssessments = input.assessments.length;
+  const moduleCount = Math.max(input.moduleIds.length, 1);
+  const semesterCount = Math.max(new Set(input.items.map((item) => `${item.stage ?? "Unknown"}::${item.semester ?? "Unknown"}`)).size, 1);
+  const dominantEntry = Object.entries(typeDistribution).sort((a, b) => b[1] - a[1])[0];
+  const dominantShare = totalAssessments > 0 ? (dominantEntry?.[1] ?? 0) / totalAssessments : 0;
+  const diverseTypes = Object.values(typeDistribution).filter((count) => count > 0).length;
+  const overloadedSemesters = [...semesterBuckets.values()].filter((bucket) => bucket.assessmentCount / Math.max(bucket.modules.size, 1) > 3);
+  const modulesWithManyAssessments = input.moduleIds.filter((moduleId) => (moduleAssessmentCounts.get(moduleId) ?? 0) > 3).length;
+
+  const observations = [
+    dominantShare >= 0.5 && dominantEntry ? `Assessment is heavily concentrated in ${dominantEntry[0]}.` : "",
+    diverseTypes >= 5 ? "Assessment evidence suggests a broad mix of assessment types across the programme." : "",
+    diverseTypes > 0 && diverseTypes <= 2 ? "Assessment diversity appears limited across the current programme evidence." : "",
+    overloadedSemesters.length > 0 ? `${overloadedSemesters.length} stage/semester grouping${overloadedSemesters.length === 1 ? "" : "s"} show potential assessment concentration.` : "",
+    modulesWithManyAssessments > 0 ? `${modulesWithManyAssessments} module${modulesWithManyAssessments === 1 ? "" : "s"} include more than three assessment components.` : "",
+    (typeDistribution.Portfolio ?? 0) === 0 ? "Portfolio assessment is not visible in the current assessment evidence." : "",
+    (typeDistribution.Practical ?? 0) === 0 ? "Practical assessment is not visible in the current assessment evidence." : "",
+  ].filter(Boolean);
+
+  return {
+    provisionalNotice: "Provisional analysis. Review required before formal use.",
+    totalAssessments,
+    averageAssessmentsPerModule: Number((totalAssessments / moduleCount).toFixed(1)),
+    averageAssessmentsPerSemester: Number((totalAssessments / semesterCount).toFixed(1)),
+    typeDistribution,
+    weightingByType,
+    semesterDistribution: [...semesterBuckets.values()].map((bucket) => ({
+      stage: bucket.stage,
+      semester: bucket.semester,
+      assessmentCount: bucket.assessmentCount,
+      totalWeighting: Math.round(bucket.totalWeighting),
+      diversity: bucket.types.size,
+      moduleCount: bucket.modules.size,
+    })).sort((a, b) => `${a.stage}${a.semester}`.localeCompare(`${b.stage}${b.semester}`)),
+    moduleMatrix: input.moduleIds.map((moduleId) => {
+      const module = input.moduleById.get(moduleId);
+      const item = itemByModule.get(moduleId);
+      return {
+        moduleId,
+        moduleCode: module?.moduleCode ?? item?.label ?? null,
+        moduleTitle: module?.moduleTitle ?? item?.label ?? null,
+        stage: item?.stage ?? null,
+        semester: item?.semester ?? null,
+        assessmentCount: moduleAssessmentCounts.get(moduleId) ?? 0,
+        totalWeighting: Math.round(moduleAssessmentWeighting.get(moduleId) ?? 0),
+        typeCount: moduleAssessmentTypes.get(moduleId)?.size ?? 0,
+        types: [...(moduleAssessmentTypes.get(moduleId) ?? new Set<string>())],
+      };
+    }).sort((a, b) => `${a.stage ?? ""}${a.semester ?? ""}${a.moduleCode ?? ""}`.localeCompare(`${b.stage ?? ""}${b.semester ?? ""}${b.moduleCode ?? ""}`)),
+    indicators: {
+      diversity: indicatorBand(diverseTypes, { low: 3, high: 5 }),
+      concentration: indicatorBand(dominantShare, { low: 0.35, high: 0.5 }),
+      balance: indicatorBand(overloadedSemesters.length + modulesWithManyAssessments, { low: 1, high: 4 }),
+    },
+    triangle,
+    observations: observations.length ? observations : ["Assessment evidence is available for programme discussion, with no immediate deterministic concentration signal."],
+    rules: [
+      "Assessment type is inferred from component type, name and mode using transparent keyword rules.",
+      "Assessment OF/FOR/AS learning is inferred from formative, feedback, reflective, portfolio and summative language where available.",
+      "Concentration is based on dominant assessment type share and module/semester assessment volume.",
+      "Balance and diversity are provisional indicators for curriculum discussion, not formal judgements.",
+    ],
   };
 }
 
@@ -1184,6 +1331,13 @@ export async function getProgrammeOverview(context: ActorContext, programmeVersi
       findingsRequiringClarification: latestReviews.filter((review) => review.decision === "request_clarification").length,
     },
     dataQuality,
+    assessmentIntelligence: buildAssessmentIntelligence({
+      items,
+      moduleIds,
+      moduleById,
+      assessments: assessmentRows,
+      descriptorToModule,
+    }),
     modules: moduleStatusRows.sort((a, b) => `${a.moduleCode ?? ""}${a.moduleTitle ?? ""}`.localeCompare(`${b.moduleCode ?? ""}${b.moduleTitle ?? ""}`)),
   };
 }

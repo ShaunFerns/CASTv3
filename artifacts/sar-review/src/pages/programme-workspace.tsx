@@ -83,6 +83,20 @@ type ProgrammeOverview = {
     modulesWithNoLearningOutcomes: number;
     modulesWithNoAssessments: number;
   };
+  assessmentIntelligence: {
+    provisionalNotice: string;
+    totalAssessments: number;
+    averageAssessmentsPerModule: number;
+    averageAssessmentsPerSemester: number;
+    typeDistribution: Record<string, number>;
+    weightingByType: Record<string, number>;
+    semesterDistribution: Array<{ stage: string; semester: string; assessmentCount: number; totalWeighting: number; diversity: number; moduleCount: number }>;
+    moduleMatrix: Array<{ moduleId: string; moduleCode?: string | null; moduleTitle?: string | null; stage?: string | null; semester?: string | null; assessmentCount: number; totalWeighting: number; typeCount: number; types: string[] }>;
+    indicators: { diversity: string; concentration: string; balance: string };
+    triangle: { ofLearning: number; forLearning: number; asLearning: number };
+    observations: string[];
+    rules: string[];
+  };
   modules: Array<{
     moduleId: string;
     moduleCode?: string | null;
@@ -598,6 +612,158 @@ function ProgrammeAssessmentSummary({ overview }: { overview: ProgrammeOverview 
         </p>
       </div>
     </div>
+  );
+}
+
+function bandClass(value: string) {
+  if (value === "High") return "bg-rose-100 text-rose-800 hover:bg-rose-100";
+  if (value === "Moderate") return "bg-amber-100 text-amber-800 hover:bg-amber-100";
+  return "bg-emerald-100 text-emerald-800 hover:bg-emerald-100";
+}
+
+function DistributionBars({ title, data, suffix = "" }: { title: string; data: Record<string, number>; suffix?: string }) {
+  const entries = Object.entries(data).sort((a, b) => b[1] - a[1]);
+  const max = Math.max(1, ...entries.map(([, value]) => value));
+  return (
+    <div className="rounded border border-slate-200 bg-white p-4">
+      <div className="mb-3 font-semibold text-slate-950">{title}</div>
+      <div className="space-y-2">
+        {entries.length === 0 && <p className="text-sm text-slate-500">No assessment evidence available.</p>}
+        {entries.map(([label, value]) => (
+          <div key={label} className="grid gap-2 text-sm sm:grid-cols-[120px_1fr_72px] sm:items-center">
+            <span className="truncate text-slate-700">{label}</span>
+            <div className="h-2 overflow-hidden rounded-full bg-slate-100">
+              <div className="h-full rounded-full bg-amber-500" style={{ width: `${Math.max(4, (value / max) * 100)}%` }} />
+            </div>
+            <span className="text-right text-slate-500">{value}{suffix}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function AssessmentTriangle({ triangle }: { triangle: ProgrammeOverview["assessmentIntelligence"]["triangle"] }) {
+  const total = Math.max(1, triangle.ofLearning + triangle.forLearning + triangle.asLearning);
+  const points = [
+    { label: "OF Learning", value: triangle.ofLearning, x: 110, y: 18 },
+    { label: "FOR Learning", value: triangle.forLearning, x: 24, y: 166 },
+    { label: "AS Learning", value: triangle.asLearning, x: 196, y: 166 },
+  ];
+  const cx = points.reduce((sum, point) => sum + point.x * (point.value / total), 0);
+  const cy = points.reduce((sum, point) => sum + point.y * (point.value / total), 0);
+  return (
+    <div className="grid gap-4 lg:grid-cols-[240px_1fr]">
+      <svg viewBox="0 0 220 190" role="img" aria-label="Assessment OF, FOR and AS learning triangle" className="mx-auto h-48 w-56">
+        <polygon points="110,18 24,166 196,166" fill="#fff7ed" stroke="#fed7aa" strokeWidth="2" />
+        <circle cx={cx || 110} cy={cy || 116} r="10" fill="#d97706" opacity="0.85" />
+        <text x="110" y="12" textAnchor="middle" className="fill-slate-700 text-[11px] font-semibold">OF Learning</text>
+        <text x="24" y="184" textAnchor="middle" className="fill-slate-700 text-[11px] font-semibold">FOR Learning</text>
+        <text x="196" y="184" textAnchor="middle" className="fill-slate-700 text-[11px] font-semibold">AS Learning</text>
+      </svg>
+      <div className="space-y-2">
+        {points.map((point) => (
+          <div key={point.label} className="flex items-center justify-between rounded border border-slate-200 bg-white px-3 py-2 text-sm">
+            <span className="font-medium text-slate-700">{point.label}</span>
+            <Badge variant="outline">{point.value}</Badge>
+          </div>
+        ))}
+        <p className="text-xs leading-5 text-slate-500">
+          Triangle position uses transparent keyword rules from assessment names, types, descriptions and metadata. It supports discussion, not formal judgement.
+        </p>
+      </div>
+    </div>
+  );
+}
+
+function ProgrammeAssessmentDashboard({ overview }: { overview: ProgrammeOverview }) {
+  const assessment = overview.assessmentIntelligence;
+  const maxModuleCount = Math.max(1, ...assessment.moduleMatrix.map((row) => row.assessmentCount));
+  const maxModuleWeighting = Math.max(1, ...assessment.moduleMatrix.map((row) => row.totalWeighting));
+  return (
+    <Card className="border-amber-200 bg-amber-50/30 shadow-none">
+      <CardHeader>
+        <div className="flex flex-col gap-2 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <CardTitle className="text-base">Assessment Intelligence</CardTitle>
+            <p className="mt-1 text-sm text-slate-600">Programme-level assessment coherence using existing imported assessment evidence.</p>
+          </div>
+          <Badge className="bg-amber-100 text-amber-900 hover:bg-amber-100">{assessment.provisionalNotice}</Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        <div className="grid gap-3 md:grid-cols-3">
+          <div className="rounded border border-slate-200 bg-white p-4"><div className="text-2xl font-semibold text-slate-950">{assessment.totalAssessments}</div><div className="text-xs text-slate-500">Total assessments</div></div>
+          <div className="rounded border border-slate-200 bg-white p-4"><div className="text-2xl font-semibold text-slate-950">{assessment.averageAssessmentsPerModule}</div><div className="text-xs text-slate-500">Average per module</div></div>
+          <div className="rounded border border-slate-200 bg-white p-4"><div className="text-2xl font-semibold text-slate-950">{assessment.averageAssessmentsPerSemester}</div><div className="text-xs text-slate-500">Average per stage/semester</div></div>
+        </div>
+
+        <div className="grid gap-4 xl:grid-cols-2">
+          <DistributionBars title="Assessment Type Distribution" data={assessment.typeDistribution} />
+          <DistributionBars title="Weighting by Assessment Type" data={assessment.weightingByType} suffix="%" />
+        </div>
+
+        <div className="grid gap-4 xl:grid-cols-[1fr_1fr]">
+          <div className="rounded border border-slate-200 bg-white p-4">
+            <div className="mb-3 font-semibold text-slate-950">Assessment Diversity Indicators</div>
+            <div className="grid gap-2 sm:grid-cols-3">
+              <div className="rounded border border-slate-200 p-3"><div className="text-xs text-slate-500">Diversity</div><Badge className={bandClass(assessment.indicators.diversity)}>{assessment.indicators.diversity}</Badge></div>
+              <div className="rounded border border-slate-200 p-3"><div className="text-xs text-slate-500">Concentration</div><Badge className={bandClass(assessment.indicators.concentration)}>{assessment.indicators.concentration}</Badge></div>
+              <div className="rounded border border-slate-200 p-3"><div className="text-xs text-slate-500">Balance</div><Badge className={bandClass(assessment.indicators.balance)}>{assessment.indicators.balance}</Badge></div>
+            </div>
+          </div>
+          <div className="rounded border border-slate-200 bg-white p-4">
+            <div className="mb-3 font-semibold text-slate-950">Assessment Triangle</div>
+            <AssessmentTriangle triangle={assessment.triangle} />
+          </div>
+        </div>
+
+        <div className="rounded border border-slate-200 bg-white p-4">
+          <div className="mb-3 font-semibold text-slate-950">Stage and Semester Assessment Mapping</div>
+          <div className="overflow-x-auto">
+            <table className="min-w-full text-left text-sm">
+              <thead className="text-xs uppercase tracking-wide text-slate-500">
+                <tr>
+                  <th className="p-2">Module</th>
+                  <th className="p-2">Stage</th>
+                  <th className="p-2">Semester</th>
+                  <th className="p-2">Volume</th>
+                  <th className="p-2">Weighting</th>
+                  <th className="p-2">Diversity</th>
+                </tr>
+              </thead>
+              <tbody>
+                {assessment.moduleMatrix.map((row) => (
+                  <tr key={row.moduleId} className="border-t border-slate-100">
+                    <td className="p-2"><div className="font-medium text-slate-800">{row.moduleCode ?? "No code"}</div><div className="text-xs text-slate-500">{row.moduleTitle ?? "Untitled module"}</div></td>
+                    <td className="p-2">{row.stage ?? "-"}</td>
+                    <td className="p-2">{row.semester ?? "-"}</td>
+                    <td className="p-2"><div className="h-2 rounded-full bg-slate-100"><div className="h-full rounded-full bg-blue-600" style={{ width: `${Math.max(4, (row.assessmentCount / maxModuleCount) * 100)}%` }} /></div><div className="mt-1 text-xs text-slate-500">{row.assessmentCount}</div></td>
+                    <td className="p-2"><div className="h-2 rounded-full bg-slate-100"><div className="h-full rounded-full bg-amber-500" style={{ width: `${Math.max(4, (row.totalWeighting / maxModuleWeighting) * 100)}%` }} /></div><div className="mt-1 text-xs text-slate-500">{row.totalWeighting}%</div></td>
+                    <td className="p-2"><Badge variant="outline">{row.typeCount} type{row.typeCount === 1 ? "" : "s"}</Badge></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+        <div className="grid gap-4 xl:grid-cols-2">
+          <div className="rounded border border-slate-200 bg-white p-4">
+            <div className="mb-3 font-semibold text-slate-950">Programme Assessment Insights</div>
+            <ul className="space-y-2 text-sm text-slate-700">
+              {assessment.observations.map((observation) => <li key={observation} className="flex gap-2"><span className="mt-2 h-1.5 w-1.5 shrink-0 rounded-full bg-amber-500" />{observation}</li>)}
+            </ul>
+          </div>
+          <div className="rounded border border-slate-200 bg-white p-4">
+            <div className="mb-3 font-semibold text-slate-950">Deterministic Rules Used</div>
+            <ul className="space-y-2 text-xs leading-5 text-slate-600">
+              {assessment.rules.map((rule) => <li key={rule}>- {rule}</li>)}
+            </ul>
+          </div>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -1239,6 +1405,7 @@ export default function ProgrammeWorkspace() {
                       </CardContent>
                     </Card>
                   </div>
+                  <ProgrammeAssessmentDashboard overview={overview} />
                 </CardContent>
               </Card>
 
