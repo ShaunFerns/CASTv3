@@ -251,6 +251,13 @@ const greenCompCompetencies = [
   "Individual initiative",
 ];
 
+const greenCompAreas = [
+  { name: "Embodying sustainability values", competencies: ["Valuing sustainability", "Supporting fairness", "Promoting nature"] },
+  { name: "Embracing complexity", competencies: ["Systems thinking", "Critical thinking", "Problem framing"] },
+  { name: "Envisioning sustainable futures", competencies: ["Futures literacy", "Adaptability", "Exploratory thinking"] },
+  { name: "Acting for sustainability", competencies: ["Political agency", "Collective action", "Individual initiative"] },
+];
+
 function frameworkRows(detail: ModuleBuilderDetail) {
   return ["greencomp", "digcomp", "entrecomp"].map((key) => detail.frameworkEvidenceSummary.find((framework) => framework.key === key) ?? {
     key,
@@ -270,7 +277,6 @@ type FrameworkIntelligence = {
   name: string;
   level: string;
   status: "Reviewed" | "Provisional" | "Not evidenced";
-  evidenceStrength: "Strong" | "Moderate" | "Limited" | "Not yet evidenced";
   evidenceCount: number;
   claimCount: number;
   reviewedFindingCount: number;
@@ -293,13 +299,6 @@ function frameworkClaimMatches(claim: EvidenceClaim, key: string) {
   const frameworkKey = normaliseFrameworkKey(claim.framework?.key);
   const frameworkName = normaliseFrameworkKey(claim.framework?.name);
   return frameworkKey === expected || frameworkName.includes(expected);
-}
-
-function evidenceQualityLabel(evidenceCount: number, reviewedFindingCount = 0) {
-  if (reviewedFindingCount > 0 || evidenceCount >= 6) return "Strong";
-  if (evidenceCount >= 3) return "Moderate";
-  if (evidenceCount > 0) return "Limited";
-  return "Not yet evidenced";
 }
 
 function dataQualityLabel(flags: ModuleSummary["dataQualityFlags"]) {
@@ -337,16 +336,14 @@ function frameworkIntelligenceRows(detail: ModuleBuilderDetail, claims: Evidence
       : evidenceCount > 0 || claimsForFramework.length > 0 || row.evaluationCount > 0
         ? "Provisional"
         : "Not evidenced";
-    const evidenceStrength = evidenceQualityLabel(evidenceCount, reviewedFindingCount);
     const level = frameworkLevel(row, evidenceCount, claimsForFramework.length, reviewedFindingCount);
-    const insights = buildFrameworkInsights(row.name, level, strengths, gaps, evidenceStrength);
+    const insights = buildFrameworkInsights(row.name, level, strengths, gaps, evidenceCount);
 
     return {
       key: row.key,
       name: row.name,
       level,
       status,
-      evidenceStrength,
       evidenceCount,
       claimCount: claimsForFramework.length,
       reviewedFindingCount,
@@ -358,7 +355,7 @@ function frameworkIntelligenceRows(detail: ModuleBuilderDetail, claims: Evidence
   });
 }
 
-function buildFrameworkInsights(framework: string, level: string, strengths: string[], gaps: string[], evidenceStrength: string) {
+function buildFrameworkInsights(framework: string, level: string, strengths: string[], gaps: string[], evidenceCount: number) {
   const insights: string[] = [];
   if (strengths.length > 0) {
     insights.push(`${framework} contribution is visible in ${strengths.slice(0, 2).join(" and ")}.`);
@@ -373,8 +370,8 @@ function buildFrameworkInsights(framework: string, level: string, strengths: str
   if (gaps.length > 0) {
     insights.push(`${gaps[0]} is not currently visible as a strong evidence area.`);
   }
-  if (evidenceStrength === "Strong") {
-    insights.push("The available evidence base is strong enough for meaningful human review.");
+  if (evidenceCount >= 6) {
+    insights.push("There are multiple evidence sources available for human review.");
   }
   return insights;
 }
@@ -484,7 +481,7 @@ function FrameworkContributionSummary({ frameworks }: { frameworks: FrameworkInt
             <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
                 <div className="font-semibold text-slate-950">{framework.name}</div>
-                <div className="mt-1 text-sm text-slate-600">{framework.evidenceStrength} evidence | {framework.status}</div>
+                <div className="mt-1 text-sm text-slate-600">{framework.evidenceCount} evidence source{framework.evidenceCount === 1 ? "" : "s"} | {framework.status}</div>
               </div>
               <Badge className="bg-cyan-100 text-cyan-800 hover:bg-cyan-100">{framework.level}</Badge>
             </div>
@@ -523,7 +520,7 @@ function FrameworkSummaryCards({ frameworks }: { frameworks: FrameworkIntelligen
               <div className="font-semibold text-slate-950">{framework.name}</div>
               <div className="mt-1 text-sm text-slate-500">{framework.status}</div>
             </div>
-            <Badge variant="outline">{framework.evidenceStrength}</Badge>
+            <Badge variant="outline">{framework.evidenceCount} evidence</Badge>
           </div>
           <div className="mt-4 flex items-center justify-between gap-3">
             <span className="text-sm text-slate-600">Contribution level</span>
@@ -560,8 +557,8 @@ function GreenCompSummaryCard({ intelligence }: { intelligence?: FrameworkIntell
               <div className="mt-1 font-semibold text-slate-950">{intelligence.status}</div>
             </div>
             <div className="rounded border border-emerald-100 bg-white p-3">
-              <div className="text-xs font-medium uppercase text-slate-500">Evidence strength</div>
-              <div className="mt-1 font-semibold text-slate-950">{intelligence.evidenceStrength}</div>
+              <div className="text-xs font-medium uppercase text-slate-500">Maturity level</div>
+              <div className="mt-1 font-semibold text-slate-950">{intelligence.level}</div>
             </div>
             <div className="rounded border border-emerald-100 bg-white p-3">
               <div className="text-xs font-medium uppercase text-slate-500">Evidence sources</div>
@@ -602,6 +599,120 @@ function ModuleOwnerInsights({ greenComp }: { greenComp?: FrameworkIntelligence 
           <span>{insight}</span>
         </div>
       ))}
+    </div>
+  );
+}
+
+function maturityScore(level: string) {
+  const scores: Record<string, number> = { None: 0, Emerging: 1, Developing: 2, Consolidating: 3, Leading: 4 };
+  return scores[level] ?? 0;
+}
+
+function levelForCompetency(evidenceCount: number, reviewed: boolean) {
+  if (reviewed && evidenceCount >= 5) return "Leading";
+  if (evidenceCount >= 5) return "Consolidating";
+  if (evidenceCount >= 3) return "Developing";
+  if (evidenceCount > 0) return "Emerging";
+  return "None";
+}
+
+function GreenCompRadar({ intelligence, claims }: { intelligence?: FrameworkIntelligence; claims: EvidenceClaim[] }) {
+  if (!intelligence) return null;
+  const greenCompClaims = claims.filter((claim) => frameworkClaimMatches(claim, "greencomp"));
+  const competencyEvidence = new Map<string, { evidenceCount: number; reviewed: boolean }>();
+
+  for (const competency of intelligence.row.competencies) {
+    const current = competencyEvidence.get(competency.name) ?? { evidenceCount: 0, reviewed: false };
+    current.evidenceCount += competency.evidenceLinkCount;
+    current.reviewed = current.reviewed || competency.status === "reviewed";
+    competencyEvidence.set(competency.name, current);
+  }
+  for (const claim of greenCompClaims) {
+    const name = claim.competency?.name;
+    if (!name) continue;
+    const current = competencyEvidence.get(name) ?? { evidenceCount: 0, reviewed: false };
+    current.evidenceCount += claim.evidence.length;
+    current.reviewed = current.reviewed || claim.review.isInstitutionalFinding;
+    competencyEvidence.set(name, current);
+  }
+
+  const areaScores = greenCompAreas.map((area, index) => {
+    const competencies = area.competencies.map((name) => {
+      const evidence = competencyEvidence.get(name) ?? { evidenceCount: 0, reviewed: false };
+      const level = levelForCompetency(evidence.evidenceCount, evidence.reviewed);
+      return { name, ...evidence, level, score: maturityScore(level) };
+    });
+    const score = competencies.reduce((sum, competency) => sum + competency.score, 0) / Math.max(1, competencies.length);
+    const angle = -Math.PI / 2 + (index * 2 * Math.PI) / greenCompAreas.length;
+    return { ...area, competencies, score, angle };
+  });
+  const size = 240;
+  const centre = size / 2;
+  const radius = 82;
+  const polygon = areaScores.map((area) => {
+    const scale = area.score / 4;
+    return `${centre + Math.cos(area.angle) * radius * scale},${centre + Math.sin(area.angle) * radius * scale}`;
+  }).join(" ");
+  const strongest = [...areaScores.flatMap((area) => area.competencies)].sort((a, b) => b.score - a.score || b.evidenceCount - a.evidenceCount).slice(0, 3);
+  const weakest = [...areaScores.flatMap((area) => area.competencies)].sort((a, b) => a.score - b.score || a.evidenceCount - b.evidenceCount).slice(0, 3);
+
+  return (
+    <div className="grid gap-5 lg:grid-cols-[260px_1fr]">
+      <svg viewBox={`0 0 ${size} ${size}`} role="img" aria-label="Module GreenComp radar" className="mx-auto h-60 w-60">
+        {[0.25, 0.5, 0.75, 1].map((scale) => (
+          <polygon
+            key={scale}
+            points={areaScores.map((area) => `${centre + Math.cos(area.angle) * radius * scale},${centre + Math.sin(area.angle) * radius * scale}`).join(" ")}
+            fill="none"
+            stroke="#dbe4ef"
+            strokeWidth="1"
+          />
+        ))}
+        {areaScores.map((area) => (
+          <g key={area.name}>
+            <line x1={centre} y1={centre} x2={centre + Math.cos(area.angle) * radius} y2={centre + Math.sin(area.angle) * radius} stroke="#dbe4ef" />
+            <text
+              x={centre + Math.cos(area.angle) * (radius + 26)}
+              y={centre + Math.sin(area.angle) * (radius + 26)}
+              textAnchor="middle"
+              dominantBaseline="middle"
+              className="fill-slate-700 text-[10px] font-semibold"
+            >
+              {area.name.split(" ").slice(0, 2).join(" ")}
+            </text>
+          </g>
+        ))}
+        <polygon points={polygon} fill="#16a34a33" stroke="#16a34a" strokeWidth="2" />
+      </svg>
+      <div className="space-y-4">
+        <div className="grid gap-3 md:grid-cols-2">
+          <div className="rounded border border-emerald-100 bg-white p-3">
+            <div className="mb-2 text-sm font-semibold text-slate-950">Strongest competencies</div>
+            <div className="space-y-2">
+              {strongest.map((competency) => (
+                <div key={competency.name} className="flex items-center justify-between gap-3 text-sm">
+                  <span className="text-slate-700">{competency.name}</span>
+                  <Badge className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100">{competency.level} · {competency.evidenceCount}</Badge>
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="rounded border border-amber-100 bg-white p-3">
+            <div className="mb-2 text-sm font-semibold text-slate-950">Weakest competencies</div>
+            <div className="space-y-2">
+              {weakest.map((competency) => (
+                <div key={competency.name} className="flex items-center justify-between gap-3 text-sm">
+                  <span className="text-slate-700">{competency.name}</span>
+                  <Badge variant="outline" className="bg-amber-50 text-amber-800">{competency.level} · {competency.evidenceCount}</Badge>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+        <div className="rounded border border-slate-200 bg-white p-3 text-sm text-slate-600">
+          Radar shape is based on evidence-linked GreenComp claims and evaluations. It explains the module maturity summary; formal use still requires human review.
+        </div>
+      </div>
     </div>
   );
 }
@@ -746,7 +857,7 @@ export default function ModuleBuilder() {
       setClaims(result.claims);
       setClaimsMessage(result.message);
     } catch (err) {
-      setClaimsError(err instanceof Error ? err.message : "GreenComp claims could not be generated.");
+      setClaimsError(err instanceof Error ? err.message : "GreenComp analysis could not be generated.");
     } finally {
       setGeneratingClaims(false);
     }
@@ -780,7 +891,6 @@ export default function ModuleBuilder() {
   const frameworkIntelligence = detail ? frameworkIntelligenceRows(detail, claims) : [];
   const greenCompIntelligence = frameworkIntelligence.find((framework) => framework.key === "greencomp");
   const totalEvidenceSources = Math.max(module?.evidenceCount ?? 0, detail?.evidenceItems.length ?? 0);
-  const moduleEvidenceQuality = evidenceQualityLabel(totalEvidenceSources, claims.filter((claim) => claim.review.isInstitutionalFinding).length);
   const moduleDataQuality = module ? dataQualityLabel(module.dataQualityFlags) : "Good";
 
   return (
@@ -824,7 +934,7 @@ export default function ModuleBuilder() {
                 </div>
                 <div className="grid gap-2 text-sm sm:grid-cols-2 lg:min-w-[360px]">
                   <Badge variant="outline">Data Quality: {moduleDataQuality}</Badge>
-                  <Badge variant="outline">Evidence Quality: {moduleEvidenceQuality}</Badge>
+                  <Badge variant="outline">Evidence Sources: {totalEvidenceSources}</Badge>
                   <Badge variant="outline">Learning Outcomes: {detail.learningOutcomes.length}</Badge>
                   <Badge variant="outline">Assessments: {detail.assessmentComponents.length}</Badge>
                 </div>
@@ -845,7 +955,7 @@ export default function ModuleBuilder() {
               <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
                 {[
                   ["Data Quality", moduleDataQuality, module.dataQualityFlags.length > 0 ? `${module.dataQualityFlags.length} issue${module.dataQualityFlags.length === 1 ? "" : "s"} to review` : "No current quality issues"],
-                  ["Evidence Quality", moduleEvidenceQuality, `${totalEvidenceSources} supporting source${totalEvidenceSources === 1 ? "" : "s"}`],
+                  ["Evidence Sources", `${totalEvidenceSources}`, "Evidence remains inspectable in the Evidence and Review tabs"],
                   ["Learning Outcomes", `${detail.learningOutcomes.length}`, "Structured outcomes available"],
                   ["Assessments", `${detail.assessmentComponents.length}`, "Assessment components available"],
                 ].map(([label, value, description]) => (
@@ -870,6 +980,10 @@ export default function ModuleBuilder() {
               </SectionCard>
 
               <GreenCompSummaryCard intelligence={greenCompIntelligence} />
+
+              <SectionCard title="GreenComp Radar">
+                <GreenCompRadar intelligence={greenCompIntelligence} claims={claims} />
+              </SectionCard>
 
               <SectionCard title="Framework Contribution Summary">
                 <FrameworkSummaryCards frameworks={frameworkIntelligence} />
@@ -984,6 +1098,10 @@ export default function ModuleBuilder() {
                 <FrameworkContributionSummary frameworks={frameworkIntelligence} />
               </SectionCard>
 
+              <SectionCard title="GreenComp Radar">
+                <GreenCompRadar intelligence={greenCompIntelligence} claims={claims} />
+              </SectionCard>
+
               <SectionCard title="Supporting Framework Evidence">
                 <div className="space-y-4">
                   {frameworkIntelligence.map((intelligence) => {
@@ -998,7 +1116,7 @@ export default function ModuleBuilder() {
                           </p>
                         </div>
                         <div className="flex items-center gap-2">
-                          <Badge variant="outline">{intelligence.evidenceStrength}</Badge>
+                          <Badge variant="outline">{intelligence.level}</Badge>
                           <ChevronDown className="h-4 w-4 text-slate-500" aria-hidden="true" />
                         </div>
                       </CollapsibleTrigger>
@@ -1053,7 +1171,7 @@ export default function ModuleBuilder() {
               <SectionCard title="Evidence Claims and Human Review">
                 <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                   <div className="text-sm leading-6 text-slate-600">
-                    Provisional GreenComp claims link module evidence to a traceable analysis run. They are not institutional findings.
+                    Provisional GreenComp analysis links module evidence to traceable claims and map-ready evaluations. It is not an institutional finding until reviewed.
                   </div>
                   <Button
                     type="button"
@@ -1062,7 +1180,7 @@ export default function ModuleBuilder() {
                     onClick={() => void generateClaims()}
                   >
                     <Sparkles className="mr-2 h-4 w-4" />
-                    {generatingClaims ? "Generating..." : "Generate GreenComp Claims"}
+                    {generatingClaims ? "Generating..." : "Generate GreenComp Analysis"}
                   </Button>
                 </div>
                 {claimsMessage && <div className="mb-3 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{claimsMessage}</div>}

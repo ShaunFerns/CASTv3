@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { Archive, ArrowRight, BookOpenCheck, ClipboardCheck, Download, FileSearch, Gauge, GitCompareArrows, Layers3, Library, ListChecks, Map as MapIcon, NotebookPen, RefreshCw, Save, ShieldCheck, Users } from "lucide-react";
+import { Archive, ArrowRight, BookOpenCheck, ClipboardCheck, Download, FileSearch, Gauge, GitCompareArrows, Layers3, Library, ListChecks, Map as MapIcon, NotebookPen, RefreshCw, Save, ShieldCheck, Sparkles, Users } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -139,6 +139,16 @@ type ProgrammeMapVisualProjection = {
       }>;
     }>;
   }>;
+};
+
+type GreenCompBulkGenerationResponse = {
+  scope: "module" | "programme" | "institution";
+  modulesAnalysed: number;
+  modulesWithClaims: number;
+  claimsCreated: number;
+  claimsSkipped: number;
+  evaluationsCreated: number;
+  evidenceConsidered: number;
 };
 
 type ComparisonMode = "programme_version" | "snapshot" | "upload";
@@ -571,6 +581,85 @@ function FrameworkHeatmap({ projection, frameworkKey }: { projection: ProgrammeM
   );
 }
 
+const greenCompAreaDefinitions = [
+  { name: "Embodying values", terms: ["valuing sustainability", "supporting fairness", "promoting nature"] },
+  { name: "Embracing complexity", terms: ["systems thinking", "critical thinking", "problem framing"] },
+  { name: "Sustainable futures", terms: ["futures literacy", "adaptability", "exploratory thinking"] },
+  { name: "Acting for sustainability", terms: ["political agency", "collective action", "individual initiative"] },
+];
+
+function ProgrammeGreenCompRadar({ projection }: { projection: ProgrammeMapVisualProjection | null }) {
+  const indicators = (projection?.rows ?? []).flatMap((row) => {
+    const layer = row.layers.find((candidate) => candidate.key === "framework:greencomp");
+    return (layer?.indicators ?? []).map((indicator) => ({
+      ...indicator,
+      moduleId: row.module.id,
+      moduleCode: row.module.code,
+      moduleTitle: row.module.title,
+    }));
+  });
+  const size = 240;
+  const centre = size / 2;
+  const radius = 82;
+  const areas = greenCompAreaDefinitions.map((area, index) => {
+    const matches = indicators.filter((indicator) => {
+      const name = indicator.competencyName?.toLowerCase() ?? "";
+      return area.terms.some((term) => name.includes(term));
+    });
+    const modules = new Map<string, { code?: string | null; title?: string | null; evidence: number }>();
+    for (const match of matches) {
+      if (!match.moduleId) continue;
+      const current = modules.get(match.moduleId) ?? { code: match.moduleCode, title: match.moduleTitle, evidence: 0 };
+      current.evidence += match.evidenceCount ?? 0;
+      modules.set(match.moduleId, current);
+    }
+    const score = matches.length ? matches.reduce((sum, indicator) => sum + scoreForMaturity(indicator.observedLevel), 0) / matches.length : 0;
+    const angle = -Math.PI / 2 + (index * 2 * Math.PI) / greenCompAreaDefinitions.length;
+    return { ...area, matches, modules: [...modules.entries()], score, angle };
+  });
+  const polygon = areas.map((area) => {
+    const scale = Math.min(1, area.score / 3);
+    return `${centre + Math.cos(area.angle) * radius * scale},${centre + Math.sin(area.angle) * radius * scale}`;
+  }).join(" ");
+
+  return (
+    <div className="grid gap-5 lg:grid-cols-[260px_1fr]">
+      <svg viewBox={`0 0 ${size} ${size}`} role="img" aria-label="Programme GreenComp radar" className="mx-auto h-60 w-60">
+        {[0.33, 0.66, 1].map((scale) => (
+          <polygon key={scale} points={areas.map((area) => `${centre + Math.cos(area.angle) * radius * scale},${centre + Math.sin(area.angle) * radius * scale}`).join(" ")} fill="none" stroke="#dbe4ef" />
+        ))}
+        {areas.map((area) => (
+          <g key={area.name}>
+            <line x1={centre} y1={centre} x2={centre + Math.cos(area.angle) * radius} y2={centre + Math.sin(area.angle) * radius} stroke="#dbe4ef" />
+            <text x={centre + Math.cos(area.angle) * (radius + 28)} y={centre + Math.sin(area.angle) * (radius + 28)} textAnchor="middle" dominantBaseline="middle" className="fill-slate-700 text-[10px] font-semibold">
+              {area.name}
+            </text>
+          </g>
+        ))}
+        <polygon points={polygon} fill="#16a34a33" stroke="#16a34a" strokeWidth="2" />
+      </svg>
+      <div className="space-y-3">
+        {areas.map((area) => (
+          <div key={area.name} className="rounded border border-slate-200 bg-white p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="font-semibold text-slate-950">{area.name}</div>
+              <Badge variant="outline">{area.matches.length} observations · {area.modules.length} modules</Badge>
+            </div>
+            <div className="mt-2 flex flex-wrap gap-2">
+              {area.modules.slice(0, 6).map(([moduleId, module]) => (
+                <a key={moduleId} href={`/module-builder?moduleId=${moduleId}`} className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs text-emerald-800 hover:bg-emerald-100">
+                  {module.code ?? "No code"} · {module.evidence}
+                </a>
+              ))}
+              {area.modules.length === 0 && <span className="text-sm text-slate-500">No contributing modules visible yet.</span>}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function ProgrammeAssessmentSummary({ overview }: { overview: ProgrammeOverview }) {
   const moduleCount = overview.summary.moduleCount;
   const withoutAssessments = overview.dataQuality.modulesWithNoAssessments;
@@ -785,6 +874,8 @@ export default function ProgrammeWorkspace() {
   const [visualFramework, setVisualFramework] = useState<(typeof frameworkVisualKeys)[number]>("greencomp");
   const [visualCoverage, setVisualCoverage] = useState<Record<string, FrameworkCoverageSummary | undefined>>({});
   const [visualProjection, setVisualProjection] = useState<ProgrammeMapVisualProjection | null>(null);
+  const [greenCompGenerating, setGreenCompGenerating] = useState<"programme" | "institution" | null>(null);
+  const [greenCompGenerationMessage, setGreenCompGenerationMessage] = useState("");
   const [comparisonOptions, setComparisonOptions] = useState<ComparisonOptions>({ programmeVersions: [], snapshots: [], uploads: [] });
   const [comparisonMode, setComparisonMode] = useState<ComparisonMode>("programme_version");
   const [comparisonLeftId, setComparisonLeftId] = useState("");
@@ -926,6 +1017,26 @@ export default function ProgrammeWorkspace() {
   async function loadOverview() {
     if (!selectedProgrammeId) return;
     setOverview(await api<ProgrammeOverview>(`/api/programme-workspace/programme-versions/${selectedProgrammeId}/overview`));
+  }
+
+  async function generateGreenCompAnalysis(scope: "programme" | "institution") {
+    if (scope === "programme" && !selectedProgrammeId) return;
+    setGreenCompGenerating(scope);
+    setGreenCompGenerationMessage("");
+    try {
+      const result = await api<GreenCompBulkGenerationResponse>("/api/claims/greencomp/generate", {
+        method: "POST",
+        body: JSON.stringify({ scope, targetId: scope === "programme" ? selectedProgrammeId : undefined }),
+      });
+      setGreenCompGenerationMessage(
+        `GreenComp analysis complete: ${result.modulesAnalysed} modules checked, ${result.claimsCreated} claims created, ${result.evaluationsCreated} map signals created.`,
+      );
+      await Promise.all([loadOverview(), loadVisualIntelligence()]);
+    } catch (error) {
+      setGreenCompGenerationMessage(error instanceof Error ? error.message : "GreenComp analysis could not be generated.");
+    } finally {
+      setGreenCompGenerating(null);
+    }
   }
 
   async function loadVisualIntelligence() {
@@ -1329,6 +1440,21 @@ export default function ProgrammeWorkspace() {
                     </p>
                   </div>
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                    <Button
+                      variant="outline"
+                      onClick={() => void generateGreenCompAnalysis("programme")}
+                      disabled={!selectedProgrammeId || Boolean(greenCompGenerating)}
+                    >
+                      <Sparkles className="mr-2 h-4 w-4" />
+                      {greenCompGenerating === "programme" ? "Generating..." : "Generate GreenComp"}
+                    </Button>
+                    <Button
+                      variant="outline"
+                      onClick={() => void generateGreenCompAnalysis("institution")}
+                      disabled={Boolean(greenCompGenerating)}
+                    >
+                      Institution
+                    </Button>
                     <Select value={visualAnalysisMode} onValueChange={(value) => setVisualAnalysisMode(value as VisualAnalysisMode)}>
                       <SelectTrigger className="w-full sm:w-[160px]"><SelectValue placeholder="Analysis view" /></SelectTrigger>
                       <SelectContent>
@@ -1349,6 +1475,20 @@ export default function ProgrammeWorkspace() {
                       ? "Only reviewed or confirmed framework observations are shown."
                       : "Provisional analysis is visible. Review required before formal use."}
                   </div>
+                  {greenCompGenerationMessage && (
+                    <div className="rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
+                      {greenCompGenerationMessage}
+                    </div>
+                  )}
+                  <Card className="border-emerald-200 bg-emerald-50/40 shadow-none">
+                    <CardHeader>
+                      <CardTitle className="text-base">GreenComp Programme Radar</CardTitle>
+                      <p className="text-sm text-slate-600">Aggregates module contributions across the four GreenComp areas. Module chips open the contributing module in Module Builder.</p>
+                    </CardHeader>
+                    <CardContent>
+                      <ProgrammeGreenCompRadar projection={visualProjection} />
+                    </CardContent>
+                  </Card>
                   <div className="grid gap-4 xl:grid-cols-[1fr_1.2fr]">
                     <Card className="border-slate-200 shadow-none">
                       <CardHeader><CardTitle className="text-base">Framework Coverage Radar</CardTitle></CardHeader>

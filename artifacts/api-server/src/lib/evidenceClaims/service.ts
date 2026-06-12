@@ -6,7 +6,11 @@ import {
   assessmentComponentsTable,
   claimEvidenceLinksTable,
   competenciesTable,
+  competencyEvaluationEvidenceLinksTable,
+  competencyEvaluationsTable,
   competencyDomainsTable,
+  curatedStructureItemsTable,
+  curatedStructuresTable,
   db,
   descriptorSectionsTable,
   evidenceItemsTable,
@@ -98,8 +102,31 @@ export type ClaimGenerationResponse = {
   claimsCreated: number;
   claimsSkipped: number;
   evidenceConsidered: number;
+  evaluationsCreated?: number;
+  modulesAnalysed?: number;
+  modulesWithClaims?: number;
   message: string;
   claims: EvidenceClaimDto[];
+};
+
+export type GreenCompBulkGenerationScope = "module" | "programme" | "institution";
+
+export type GreenCompBulkGenerationResponse = {
+  scope: GreenCompBulkGenerationScope;
+  modulesAnalysed: number;
+  modulesWithClaims: number;
+  claimsCreated: number;
+  claimsSkipped: number;
+  evaluationsCreated: number;
+  evidenceConsidered: number;
+  results: Array<{
+    moduleId: string;
+    claimsCreated: number;
+    claimsSkipped: number;
+    evaluationsCreated: number;
+    evidenceConsidered: number;
+    message: string;
+  }>;
 };
 
 export type ClaimReviewInput = {
@@ -299,17 +326,106 @@ function summarizeEvidenceSources(input: {
   };
 }
 
-async function existingGenerationKeys(context: ClaimActorContext, moduleId: string) {
+async function existingGenerationClaims(context: ClaimActorContext, moduleId: string) {
   const rows = await db
-    .select({ metadata: aiClaimsTable.metadata })
+    .select()
     .from(aiClaimsTable)
     .where(and(eq(aiClaimsTable.institutionId, context.institutionId), eq(aiClaimsTable.moduleId, moduleId)));
 
-  return new Set(rows.map((row) => (typeof row.metadata.generationKey === "string" ? row.metadata.generationKey : undefined)).filter(Boolean));
+  return new Map(
+    rows
+      .map((row) => [typeof row.metadata.generationKey === "string" ? row.metadata.generationKey : undefined, row] as const)
+      .filter((entry): entry is [string, typeof aiClaimsTable.$inferSelect] => Boolean(entry[0])),
+  );
 }
 
 function generationKey(moduleId: string, competencyId: string, evidenceIds: string[]): string {
   return `greencomp:${moduleId}:${competencyId}:${evidenceIds.sort().join(",")}`;
+}
+
+function maturityForEvidence(matchCount: number, evidenceCount: number) {
+  if (matchCount >= 8 || evidenceCount >= 5) return "leading";
+  if (matchCount >= 5 || evidenceCount >= 3) return "consolidating";
+  if (matchCount >= 2 || evidenceCount >= 2) return "developing";
+  return "developing";
+}
+
+async function placementForModule(context: ClaimActorContext, moduleId: string) {
+  const [row] = await db
+    .select({ item: curatedStructureItemsTable, structure: curatedStructuresTable })
+    .from(curatedStructureItemsTable)
+    .innerJoin(curatedStructuresTable, eq(curatedStructureItemsTable.curatedStructureId, curatedStructuresTable.id))
+    .where(and(eq(curatedStructureItemsTable.institutionId, context.institutionId), eq(curatedStructureItemsTable.moduleId, moduleId)))
+    .orderBy(asc(curatedStructureItemsTable.orderIndex), asc(curatedStructureItemsTable.createdAt))
+    .limit(1);
+
+  return row;
+}
+
+async function ensureGreenCompEvaluation(input: {
+  context: ClaimActorContext;
+  moduleId: string;
+  moduleDescriptorId?: string | null;
+  lensVersionId: string;
+  competencyId: string;
+  generationKey: string;
+  evidence: Array<typeof evidenceItemsTable.$inferSelect>;
+  confidence: number;
+  matchCount: number;
+  rationale: string;
+}) {
+  const existing = await db
+    .select()
+    .from(competencyEvaluationsTable)
+    .where(and(eq(competencyEvaluationsTable.institutionId, input.context.institutionId), eq(competencyEvaluationsTable.moduleId, input.moduleId)))
+    .then((rows) => rows.find((row) => row.metadata?.generationKey === input.generationKey));
+
+  if (existing) return { evaluation: existing, created: false };
+
+  const placement = await placementForModule(input.context, input.moduleId);
+  const evidenceProgrammeVersionId = input.evidence.find((item) => item.programmeVersionId)?.programmeVersionId;
+  const evidenceStructureItemId = input.evidence.find((item) => item.curatedStructureItemId)?.curatedStructureItemId;
+
+  const [evaluation] = await db
+    .insert(competencyEvaluationsTable)
+    .values({
+      institutionId: input.context.institutionId,
+      programmeVersionId: evidenceProgrammeVersionId ?? placement?.structure.programmeVersionId,
+      competencyId: input.competencyId,
+      lensVersionId: input.lensVersionId,
+      curatedStructureItemId: evidenceStructureItemId ?? placement?.item.id,
+      moduleId: input.moduleId,
+      moduleDescriptorId: input.moduleDescriptorId,
+      observedLevel: maturityForEvidence(input.matchCount, input.evidence.length),
+      source: "rule",
+      status: "needs_review",
+      confidence: input.confidence,
+      rationale: input.rationale,
+      createdByUserId: input.context.userId,
+      metadata: {
+        framework: "greencomp",
+        generationKey: input.generationKey,
+        deterministic: true,
+        aiCallMade: false,
+        analysisScope: "provisional",
+        formalUseRequiresReview: true,
+        generatedFromClaimWorkflow: true,
+      },
+    })
+    .returning();
+
+  if (input.evidence.length > 0) {
+    await db.insert(competencyEvaluationEvidenceLinksTable).values(
+      input.evidence.map((item) => ({
+        competencyEvaluationId: evaluation.id,
+        evidenceItemId: item.id,
+        relevance: input.confidence,
+        notes: "Linked during deterministic GreenComp analysis.",
+      })),
+    ).onConflictDoNothing();
+  }
+
+  return { evaluation, created: true };
 }
 
 function formatCompetencyCode(competency: typeof competenciesTable.$inferSelect): string {
@@ -441,9 +557,10 @@ export async function generateGreenCompClaimsForModule(
     .where(eq(competenciesTable.frameworkVersionId, frameworkVersion.id))
     .orderBy(asc(competenciesTable.orderIndex));
 
-  const existingKeys = await existingGenerationKeys(context, moduleId);
+  const existingClaimsByKey = await existingGenerationClaims(context, moduleId);
   let claimsCreated = 0;
   let claimsSkipped = 0;
+  let evaluationsCreated = 0;
 
   for (const row of competencies) {
     const rule = greenCompRules.find((candidate) => candidate.key === row.competency.key);
@@ -459,14 +576,29 @@ export async function generateGreenCompClaimsForModule(
 
     const evidenceIds = scoredEvidence.map((candidate) => candidate.item.id);
     const key = generationKey(moduleId, row.competency.id, evidenceIds);
-    if (existingKeys.has(key)) {
+    const matchCount = scoredEvidence.reduce((sum, candidate) => sum + candidate.score, 0);
+    const competencyCode = formatCompetencyCode(row.competency);
+    const confidence = confidenceFor(matchCount, scoredEvidence.length);
+    const rationale = `This provisional claim is based on ${scoredEvidence.length} linked evidence source${scoredEvidence.length === 1 ? "" : "s"} containing terms associated with ${row.competency.name}.`;
+
+    if (existingClaimsByKey.has(key)) {
+      const evaluation = await ensureGreenCompEvaluation({
+        context,
+        moduleId,
+        moduleDescriptorId: moduleEvidence.descriptors.at(-1)?.id,
+        lensVersionId: lensVersion.id,
+        competencyId: row.competency.id,
+        generationKey: key,
+        evidence: scoredEvidence.map((candidate) => candidate.item),
+        confidence,
+        matchCount,
+        rationale,
+      });
+      if (evaluation.created) evaluationsCreated += 1;
       claimsSkipped += 1;
       continue;
     }
 
-    const matchCount = scoredEvidence.reduce((sum, candidate) => sum + candidate.score, 0);
-    const competencyCode = formatCompetencyCode(row.competency);
-    const confidence = confidenceFor(matchCount, scoredEvidence.length);
     const sourceSummary = summarizeEvidenceSources({
       evidence: scoredEvidence.map((candidate) => candidate.item),
       sections: moduleEvidence.sections,
@@ -493,7 +625,7 @@ export async function generateGreenCompClaimsForModule(
         status: "needs_review",
         title: `GreenComp ${competencyCode}: ${row.competency.name}`,
         claimText: `Evidence suggests this module addresses GreenComp competence ${competencyCode} (${row.competency.name}).`,
-        rationale: `This provisional claim is based on ${scoredEvidence.length} linked evidence source${scoredEvidence.length === 1 ? "" : "s"} containing terms associated with ${row.competency.name}.`,
+        rationale,
         confidence,
         metadata: {
           phase: "6B.1",
@@ -522,7 +654,20 @@ export async function generateGreenCompClaimsForModule(
       })),
     );
 
-    existingKeys.add(key);
+    const evaluation = await ensureGreenCompEvaluation({
+      context,
+      moduleId,
+      moduleDescriptorId: moduleEvidence.descriptors.at(-1)?.id,
+      lensVersionId: lensVersion.id,
+      competencyId: row.competency.id,
+      generationKey: key,
+      evidence: scoredEvidence.map((candidate) => candidate.item),
+      confidence,
+      matchCount,
+      rationale,
+    });
+    if (evaluation.created) evaluationsCreated += 1;
+    existingClaimsByKey.set(key, claim);
     claimsCreated += 1;
   }
 
@@ -533,7 +678,7 @@ export async function generateGreenCompClaimsForModule(
       .set({
         status: "completed",
         completedAt,
-        responseMetadata: { claimsCreated, claimsSkipped, evidenceConsidered: moduleEvidence.evidence.length },
+        responseMetadata: { claimsCreated, claimsSkipped, evaluationsCreated, evidenceConsidered: moduleEvidence.evidence.length },
       })
       .where(eq(aiModelRunsTable.id, modelRun.id)),
     db
@@ -541,7 +686,7 @@ export async function generateGreenCompClaimsForModule(
       .set({
         status: "completed",
         completedAt,
-        summary: { claimsCreated, claimsSkipped, evidenceConsidered: moduleEvidence.evidence.length },
+        summary: { claimsCreated, claimsSkipped, evaluationsCreated, evidenceConsidered: moduleEvidence.evidence.length },
       })
       .where(eq(analysisRunsTable.id, analysisRun.id)),
   ]);
@@ -551,11 +696,74 @@ export async function generateGreenCompClaimsForModule(
     analysisRunId: analysisRun.id,
     claimsCreated,
     claimsSkipped,
+    evaluationsCreated,
     evidenceConsidered: moduleEvidence.evidence.length,
     message: claimsCreated > 0
       ? `Generated ${claimsCreated} provisional GreenComp claim${claimsCreated === 1 ? "" : "s"}.`
       : "No new GreenComp claims were generated from the available evidence.",
     claims: claims.claims,
+  };
+}
+
+async function moduleIdsForGreenCompScope(context: ClaimActorContext, scope: GreenCompBulkGenerationScope, targetId?: string) {
+  if (scope === "module") {
+    if (!targetId) throw new Error("moduleId is required for current module analysis");
+    const module = await loadCanonicalModule(context, targetId);
+    if (!module) throw new Error("Module not found");
+    return [module.id];
+  }
+
+  if (scope === "programme") {
+    if (!targetId) throw new Error("programmeVersionId is required for programme analysis");
+    const rows = await db
+      .select({ moduleId: curatedStructureItemsTable.moduleId })
+      .from(curatedStructureItemsTable)
+      .innerJoin(curatedStructuresTable, eq(curatedStructureItemsTable.curatedStructureId, curatedStructuresTable.id))
+      .where(and(eq(curatedStructureItemsTable.institutionId, context.institutionId), eq(curatedStructuresTable.programmeVersionId, targetId)));
+    return [...new Set(rows.map((row) => row.moduleId).filter((id): id is string => Boolean(id)))];
+  }
+
+  const rows = await db
+    .select({ id: modulesTable.id })
+    .from(modulesTable)
+    .where(eq(modulesTable.institutionId, context.institutionId))
+    .orderBy(asc(modulesTable.moduleCode), asc(modulesTable.moduleTitle));
+  return rows.map((row) => row.id);
+}
+
+export async function generateGreenCompClaimsForScope(
+  context: ClaimActorContext,
+  input: { scope: GreenCompBulkGenerationScope; targetId?: string },
+): Promise<GreenCompBulkGenerationResponse> {
+  const moduleIds = await moduleIdsForGreenCompScope(context, input.scope, input.targetId);
+  const results: GreenCompBulkGenerationResponse["results"] = [];
+
+  for (const id of moduleIds) {
+    const result = await generateGreenCompClaimsForModule(context, id);
+    results.push({
+      moduleId: id,
+      claimsCreated: result.claimsCreated,
+      claimsSkipped: result.claimsSkipped,
+      evaluationsCreated: result.evaluationsCreated ?? 0,
+      evidenceConsidered: result.evidenceConsidered,
+      message: result.message,
+    });
+  }
+
+  const claimsCreated = results.reduce((sum, result) => sum + result.claimsCreated, 0);
+  const claimsSkipped = results.reduce((sum, result) => sum + result.claimsSkipped, 0);
+  const evaluationsCreated = results.reduce((sum, result) => sum + result.evaluationsCreated, 0);
+  const evidenceConsidered = results.reduce((sum, result) => sum + result.evidenceConsidered, 0);
+
+  return {
+    scope: input.scope,
+    modulesAnalysed: moduleIds.length,
+    modulesWithClaims: results.filter((result) => result.claimsCreated > 0 || result.claimsSkipped > 0).length,
+    claimsCreated,
+    claimsSkipped,
+    evaluationsCreated,
+    evidenceConsidered,
+    results,
   };
 }
 
