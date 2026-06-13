@@ -258,6 +258,26 @@ const greenCompAreas = [
   { name: "Acting for sustainability", competencies: ["Political agency", "Collective action", "Individual initiative"] },
 ];
 
+const frameworkCompetencyAreas: Record<string, Array<{ name: string; competencies: string[] }>> = {
+  greencomp: greenCompAreas,
+  digcomp: [
+    { name: "Information and data literacy", competencies: ["Browsing, searching and filtering data, information and digital content", "Evaluating data, information and digital content", "Managing data, information and digital content"] },
+    { name: "Communication and collaboration", competencies: ["Interacting through digital technologies", "Sharing through digital technologies", "Engaging in citizenship through digital technologies", "Collaborating through digital technologies", "Netiquette", "Managing digital identity"] },
+    { name: "Digital content creation", competencies: ["Developing digital content", "Integrating and re-elaborating digital content", "Copyright and licences", "Programming"] },
+    { name: "Safety", competencies: ["Protecting devices", "Protecting personal data and privacy", "Protecting health and well-being", "Protecting the environment"] },
+    { name: "Problem solving", competencies: ["Solving technical problems", "Identifying needs and technological responses", "Creatively using digital technology", "Identifying digital competence gaps"] },
+  ],
+  entrecomp: [
+    { name: "Ideas and opportunities", competencies: ["Spotting opportunities", "Creativity", "Vision", "Valuing ideas", "Ethical and sustainable thinking"] },
+    { name: "Resources", competencies: ["Self-awareness and self-efficacy", "Motivation and perseverance", "Mobilising resources", "Financial and economic literacy", "Mobilising others"] },
+    { name: "Into action", competencies: ["Taking the initiative", "Planning and management", "Coping with uncertainty, ambiguity and risk", "Working with others", "Learning through experience"] },
+  ],
+};
+
+function frameworkCatalog(key: string) {
+  return frameworkCompetencyAreas[key]?.flatMap((area) => area.competencies) ?? [];
+}
+
 function frameworkRows(detail: ModuleBuilderDetail) {
   return ["greencomp", "digcomp", "entrecomp"].map((key) => detail.frameworkEvidenceSummary.find((framework) => framework.key === key) ?? {
     key,
@@ -329,7 +349,7 @@ function frameworkIntelligenceRows(detail: ModuleBuilderDetail, claims: Evidence
     const claimCompetencies = uniqueLabels(claimsForFramework.map((claim) => claim.competency?.name));
     const observedCompetencies = uniqueLabels(row.competencies.filter((competency) => competency.evidenceLinkCount > 0).map((competency) => competency.name));
     const strengths = uniqueLabels([...observedCompetencies, ...claimCompetencies]).slice(0, 4);
-    const catalog = row.key === "greencomp" ? greenCompCompetencies : uniqueLabels(row.competencies.map((competency) => competency.name));
+    const catalog = frameworkCatalog(row.key).length > 0 ? frameworkCatalog(row.key) : uniqueLabels(row.competencies.map((competency) => competency.name));
     const gaps = catalog.filter((competency) => !strengths.some((strength) => strength.toLowerCase() === competency.toLowerCase())).slice(0, 4);
     const status: FrameworkIntelligence["status"] = reviewedFindingCount > 0
       ? "Reviewed"
@@ -709,9 +729,9 @@ function GreenCompRadar({ intelligence, claims }: { intelligence?: FrameworkInte
   );
 }
 
-function GreenCompCompetencyTable({ intelligence, claims }: { intelligence?: FrameworkIntelligence; claims: EvidenceClaim[] }) {
+function FrameworkCompetencyTable({ intelligence, claims }: { intelligence?: FrameworkIntelligence; claims: EvidenceClaim[] }) {
   if (!intelligence) return null;
-  const greenCompClaims = claims.filter((claim) => frameworkClaimMatches(claim, "greencomp"));
+  const frameworkClaims = claims.filter((claim) => frameworkClaimMatches(claim, intelligence.key));
   const competencyEvidence = new Map<string, { evidenceCount: number; reviewed: boolean }>();
 
   for (const competency of intelligence.row.competencies) {
@@ -720,7 +740,7 @@ function GreenCompCompetencyTable({ intelligence, claims }: { intelligence?: Fra
     current.reviewed = current.reviewed || competency.status === "reviewed";
     competencyEvidence.set(competency.name, current);
   }
-  for (const claim of greenCompClaims) {
+  for (const claim of frameworkClaims) {
     const name = claim.competency?.name;
     if (!name) continue;
     const current = competencyEvidence.get(name) ?? { evidenceCount: 0, reviewed: false };
@@ -729,7 +749,15 @@ function GreenCompCompetencyTable({ intelligence, claims }: { intelligence?: Fra
     competencyEvidence.set(name, current);
   }
 
-  const rows = greenCompAreas.flatMap((area) => area.competencies.map((name) => {
+  const areas = frameworkCompetencyAreas[intelligence.key] ?? [{
+    name: `${intelligence.name} competencies`,
+    competencies: uniqueLabels([
+      ...intelligence.row.competencies.map((competency) => competency.name),
+      ...frameworkClaims.map((claim) => claim.competency?.name),
+    ]),
+  }];
+
+  const rows = areas.flatMap((area) => area.competencies.map((name) => {
     const evidence = competencyEvidence.get(name) ?? { evidenceCount: 0, reviewed: false };
     return {
       area: area.name,
@@ -745,7 +773,7 @@ function GreenCompCompetencyTable({ intelligence, claims }: { intelligence?: Fra
       <table className="w-full min-w-[760px] text-left text-sm">
         <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
           <tr>
-            <th className="p-3">GreenComp area</th>
+            <th className="p-3">{intelligence.name} area</th>
             <th className="p-3">Competence</th>
             <th className="p-3">Module contribution</th>
             <th className="p-3">Evidence</th>
@@ -770,6 +798,10 @@ function GreenCompCompetencyTable({ intelligence, claims }: { intelligence?: Fra
       </table>
     </div>
   );
+}
+
+function GreenCompCompetencyTable({ intelligence, claims }: { intelligence?: FrameworkIntelligence; claims: EvidenceClaim[] }) {
+  return <FrameworkCompetencyTable intelligence={intelligence} claims={claims} />;
 }
 
 function priorityClass(priority: "low" | "medium" | "high") {
@@ -857,7 +889,7 @@ export default function ModuleBuilder() {
   const [claimsError, setClaimsError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [claimsLoading, setClaimsLoading] = useState(false);
-  const [generatingClaims, setGeneratingClaims] = useState(false);
+  const [generatingClaims, setGeneratingClaims] = useState<string | null>(null);
   const [reviewingClaimId, setReviewingClaimId] = useState<string | null>(null);
   const [reviewDrafts, setReviewDrafts] = useState<Record<string, { rationale: string; amendedText: string }>>({});
 
@@ -902,19 +934,19 @@ export default function ModuleBuilder() {
     };
   }, []);
 
-  async function generateClaims() {
+  async function generateClaims(frameworkKey = "greencomp") {
     if (!module?.moduleId) return;
-    setGeneratingClaims(true);
+    setGeneratingClaims(frameworkKey);
     setClaimsError(null);
     setClaimsMessage(null);
     try {
-      const result = await api<ClaimGenerationResponse>(`/api/claims/modules/${encodeURIComponent(module.moduleId)}/generate`, { method: "POST" });
+      const result = await api<ClaimGenerationResponse>(`/api/claims/modules/${encodeURIComponent(module.moduleId)}/frameworks/${encodeURIComponent(frameworkKey)}/generate`, { method: "POST" });
       setClaims(result.claims);
       setClaimsMessage(result.message);
     } catch (err) {
-      setClaimsError(err instanceof Error ? err.message : "GreenComp analysis could not be generated.");
+      setClaimsError(err instanceof Error ? err.message : "Framework analysis could not be generated.");
     } finally {
-      setGeneratingClaims(false);
+      setGeneratingClaims(null);
     }
   }
 
@@ -1047,6 +1079,23 @@ export default function ModuleBuilder() {
                 <FrameworkSummaryCards frameworks={frameworkIntelligence} />
               </SectionCard>
 
+              <SectionCard title="Framework Competency Contributions">
+                <div className="space-y-5">
+                  {frameworkIntelligence.map((framework) => (
+                    <div key={framework.key} className="space-y-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <h3 className="font-semibold text-slate-950">{framework.name}</h3>
+                          <p className="text-sm text-slate-600">Module-level contribution only. Competencies without evidence are labelled neutrally.</p>
+                        </div>
+                        <Badge variant="outline">{framework.status}</Badge>
+                      </div>
+                      <FrameworkCompetencyTable intelligence={framework} claims={claims} />
+                    </div>
+                  ))}
+                </div>
+              </SectionCard>
+
               <div className="grid gap-6 xl:grid-cols-[1fr_360px]">
                 <SectionCard title="Contribution Details">
                   <FrameworkContributionSummary frameworks={frameworkIntelligence} />
@@ -1159,7 +1208,23 @@ export default function ModuleBuilder() {
               <SectionCard title="GreenComp Radar">
                 <div className="space-y-5">
                   <GreenCompRadar intelligence={greenCompIntelligence} claims={claims} />
-                  <GreenCompCompetencyTable intelligence={greenCompIntelligence} claims={claims} />
+                </div>
+              </SectionCard>
+
+              <SectionCard title="Framework Contribution Tables">
+                <div className="space-y-5">
+                  {frameworkIntelligence.map((framework) => (
+                    <div key={framework.key} className="space-y-2">
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div>
+                          <h3 className="font-semibold text-slate-950">{framework.name}</h3>
+                          <p className="text-sm text-slate-600">Evidenced contribution is shown without implying this module should cover every competence.</p>
+                        </div>
+                        <Badge variant="outline">{framework.level}</Badge>
+                      </div>
+                      <FrameworkCompetencyTable intelligence={framework} claims={claims} />
+                    </div>
+                  ))}
                 </div>
               </SectionCard>
 
@@ -1232,17 +1297,22 @@ export default function ModuleBuilder() {
               <SectionCard title="Evidence Claims and Human Review">
                 <div className="mb-4 flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                   <div className="text-sm leading-6 text-slate-600">
-                    Provisional GreenComp analysis links module evidence to traceable claims and map-ready evaluations. It is not an institutional finding until reviewed.
+                    Provisional framework analysis links module evidence to traceable claims and map-ready evaluations. It is not an institutional finding until reviewed.
                   </div>
-                  <Button
-                    type="button"
-                    className="bg-blue-950 hover:bg-blue-900"
-                    disabled={!module.moduleId || generatingClaims}
-                    onClick={() => void generateClaims()}
-                  >
-                    <Sparkles className="mr-2 h-4 w-4" />
-                    {generatingClaims ? "Generating..." : "Generate GreenComp Analysis"}
-                  </Button>
+                  <div className="flex flex-wrap gap-2">
+                    {["greencomp", "digcomp", "entrecomp"].map((key) => (
+                      <Button
+                        key={key}
+                        type="button"
+                        className="bg-blue-950 hover:bg-blue-900"
+                        disabled={!module.moduleId || Boolean(generatingClaims)}
+                        onClick={() => void generateClaims(key)}
+                      >
+                        <Sparkles className="mr-2 h-4 w-4" />
+                        {generatingClaims === key ? "Generating..." : `Generate ${frameworkNames[key]} Analysis`}
+                      </Button>
+                    ))}
+                  </div>
                 </div>
                 {claimsMessage && <div className="mb-3 rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">{claimsMessage}</div>}
                 {claimsError && <div className="mb-3 rounded border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-800">{claimsError}</div>}

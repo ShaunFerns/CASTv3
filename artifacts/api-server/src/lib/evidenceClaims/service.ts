@@ -109,6 +109,8 @@ export type ClaimGenerationResponse = {
   claims: EvidenceClaimDto[];
 };
 
+export type FrameworkIntelligenceKey = "greencomp" | "digcomp" | "entrecomp";
+
 export type GreenCompBulkGenerationScope = "module" | "programme" | "institution";
 
 export type GreenCompBulkGenerationResponse = {
@@ -141,30 +143,106 @@ export type ClaimReviewResponse = {
   message: string;
 };
 
-type GreenCompRule = {
+type FrameworkRule = {
   key: string;
   terms: string[];
 };
 
 const deterministicProvider = "cast";
-const deterministicModel = "deterministic-greencomp-claims-v1";
-const promptKey = "greencomp-evidence-claim-foundation";
 const promptVersionLabel = "1.0-deterministic";
 
-const greenCompRules: GreenCompRule[] = [
-  { key: "valuing-sustainability", terms: ["sustainability", "sustainable", "values", "ethic", "responsibility"] },
-  { key: "supporting-fairness", terms: ["fairness", "equity", "justice", "inclusive", "future generations", "social responsibility"] },
-  { key: "promoting-nature", terms: ["nature", "biodiversity", "ecosystem", "ecological", "environment", "climate"] },
-  { key: "systems-thinking", terms: ["system", "systems", "interdepend", "complex", "holistic", "interact"] },
-  { key: "critical-thinking", terms: ["critical", "critique", "evaluate", "evidence", "assumption", "argument"] },
-  { key: "problem-framing", terms: ["problem", "challenge", "frame", "scope", "mitigate", "adapt"] },
-  { key: "futures-literacy", terms: ["future", "scenario", "forecast", "vision", "long-term", "anticipate"] },
-  { key: "adaptability", terms: ["adapt", "uncertainty", "risk", "transition", "change", "resilience"] },
-  { key: "exploratory-thinking", terms: ["explore", "creative", "innovation", "experiment", "interdisciplinary", "novel"] },
-  { key: "political-agency", terms: ["policy", "governance", "political", "accountability", "regulation", "civic"] },
-  { key: "collective-action", terms: ["collabor", "team", "collective", "community", "stakeholder", "partnership"] },
-  { key: "individual-initiative", terms: ["initiative", "action", "contribute", "leadership", "personal", "practice"] },
-];
+const frameworkClaimConfigs: Record<FrameworkIntelligenceKey, {
+  key: FrameworkIntelligenceKey;
+  name: string;
+  versionLabel: string;
+  lensKey: string;
+  model: string;
+  promptKey: string;
+  promptName: string;
+  rules: FrameworkRule[];
+}> = {
+  greencomp: {
+    key: "greencomp",
+    name: "GreenComp",
+    versionLabel: "2022",
+    lensKey: "greencomp-curriculum-evidence",
+    model: "deterministic-greencomp-claims-v1",
+    promptKey: "greencomp-evidence-claim-foundation",
+    promptName: "GreenComp evidence claim foundation",
+    rules: [
+      { key: "valuing-sustainability", terms: ["sustainability", "sustainable", "values", "ethic", "responsibility"] },
+      { key: "supporting-fairness", terms: ["fairness", "equity", "justice", "inclusive", "future generations", "social responsibility"] },
+      { key: "promoting-nature", terms: ["nature", "biodiversity", "ecosystem", "ecological", "environment", "climate"] },
+      { key: "systems-thinking", terms: ["system", "systems", "interdepend", "complex", "holistic", "interact"] },
+      { key: "critical-thinking", terms: ["critical", "critique", "evaluate", "evidence", "assumption", "argument"] },
+      { key: "problem-framing", terms: ["problem", "challenge", "frame", "scope", "mitigate", "adapt"] },
+      { key: "futures-literacy", terms: ["future", "scenario", "forecast", "vision", "long-term", "anticipate"] },
+      { key: "adaptability", terms: ["adapt", "uncertainty", "risk", "transition", "change", "resilience"] },
+      { key: "exploratory-thinking", terms: ["explore", "creative", "innovation", "experiment", "interdisciplinary", "novel"] },
+      { key: "political-agency", terms: ["policy", "governance", "political", "accountability", "regulation", "civic"] },
+      { key: "collective-action", terms: ["collabor", "team", "collective", "community", "stakeholder", "partnership"] },
+      { key: "individual-initiative", terms: ["initiative", "action", "contribute", "leadership", "personal", "practice"] },
+    ],
+  },
+  digcomp: {
+    key: "digcomp",
+    name: "DigComp",
+    versionLabel: "3.0",
+    lensKey: "digcomp-curriculum-evidence",
+    model: "deterministic-digcomp-claims-v1",
+    promptKey: "digcomp-evidence-claim-foundation",
+    promptName: "DigComp evidence claim foundation",
+    rules: [
+      { key: "browsing-searching-and-filtering", terms: ["search", "filter", "information need", "digital content", "retrieve"] },
+      { key: "evaluating-data-information-and-digital-content", terms: ["evaluate", "credibility", "reliability", "data", "information", "evidence"] },
+      { key: "managing-data-information-and-digital-content", terms: ["manage data", "database", "dataset", "organise", "store", "retrieve"] },
+      { key: "interacting-through-digital-technologies", terms: ["digital communication", "online interaction", "virtual", "platform", "collaborative tool"] },
+      { key: "sharing-through-digital-technologies", terms: ["share", "publish", "digital content", "repository", "online"] },
+      { key: "engaging-in-citizenship-through-digital-technologies", terms: ["digital citizenship", "civic", "public service", "participation", "society"] },
+      { key: "collaborating-through-digital-technologies", terms: ["collaborat", "team", "digital tool", "version control", "shared workspace"] },
+      { key: "netiquette", terms: ["netiquette", "online behaviour", "digital etiquette", "professional conduct", "respectful"] },
+      { key: "managing-digital-identity", terms: ["digital identity", "profile", "privacy", "reputation", "credential"] },
+      { key: "developing-digital-content", terms: ["develop digital", "create digital", "media", "content", "website", "app"] },
+      { key: "integrating-and-re-elaborating-digital-content", terms: ["integrat", "adapt", "remix", "combine", "edit digital"] },
+      { key: "copyright-and-licences", terms: ["copyright", "licence", "creative commons", "intellectual property", "attribution"] },
+      { key: "programming", terms: ["program", "code", "software", "algorithm", "script", "application"] },
+      { key: "protecting-devices", terms: ["security", "cyber", "device", "malware", "threat", "protect"] },
+      { key: "protecting-personal-data-and-privacy", terms: ["personal data", "privacy", "gdpr", "data protection", "confidential"] },
+      { key: "protecting-health-and-well-being", terms: ["wellbeing", "screen", "digital health", "online safety", "accessibility"] },
+      { key: "protecting-the-environment", terms: ["environment", "sustainable digital", "energy", "carbon", "e-waste"] },
+      { key: "solving-technical-problems", terms: ["troubleshoot", "technical problem", "debug", "diagnose", "resolve"] },
+      { key: "identifying-needs-and-technological-responses", terms: ["requirements", "user needs", "technology solution", "digital response", "select tools"] },
+      { key: "creatively-using-digital-technology", terms: ["innovation", "creative", "prototype", "digital technology", "design solution"] },
+      { key: "identifying-digital-competence-gaps", terms: ["digital skills", "competence gap", "professional development", "upskill", "reflect"] },
+    ],
+  },
+  entrecomp: {
+    key: "entrecomp",
+    name: "EntreComp",
+    versionLabel: "2016",
+    lensKey: "entrecomp-curriculum-evidence",
+    model: "deterministic-entrecomp-claims-v1",
+    promptKey: "entrecomp-evidence-claim-foundation",
+    promptName: "EntreComp evidence claim foundation",
+    rules: [
+      { key: "spotting-opportunities", terms: ["opportunit", "market", "need", "problem", "value"] },
+      { key: "creativity", terms: ["creative", "ideat", "innovation", "design", "novel"] },
+      { key: "vision", terms: ["vision", "future", "strategy", "purpose", "long-term"] },
+      { key: "valuing-ideas", terms: ["value proposition", "evaluate ideas", "benefit", "impact", "feasibility"] },
+      { key: "ethical-and-sustainable-thinking", terms: ["ethical", "sustainable", "responsible", "impact", "consequence"] },
+      { key: "self-awareness-and-self-efficacy", terms: ["self-awareness", "reflect", "confidence", "strengths", "self-efficacy"] },
+      { key: "motivation-and-perseverance", terms: ["motivation", "perseverance", "resilience", "persistence", "goal"] },
+      { key: "mobilising-resources", terms: ["resource", "budget", "materials", "time management", "capacity"] },
+      { key: "financial-and-economic-literacy", terms: ["financial", "economic", "cost", "revenue", "business model"] },
+      { key: "mobilising-others", terms: ["persuade", "pitch", "stakeholder", "influence", "engage others"] },
+      { key: "taking-the-initiative", terms: ["initiative", "action", "lead", "start", "implement"] },
+      { key: "planning-and-management", terms: ["plan", "manage", "milestone", "schedule", "project"] },
+      { key: "coping-with-uncertainty-ambiguity-and-risk", terms: ["risk", "uncertainty", "ambiguity", "contingency", "decision"] },
+      { key: "working-with-others", terms: ["team", "collaborat", "group work", "partnership", "network"] },
+      { key: "learning-through-experience", terms: ["reflect", "lesson learned", "iterate", "feedback", "experience"] },
+    ],
+  },
+};
 
 function preview(text: string | null | undefined, limit = 220): string | null {
   if (!text?.trim()) return null;
@@ -195,25 +273,27 @@ async function loadCanonicalModule(context: ClaimActorContext, moduleId: string)
   return module;
 }
 
-async function loadGreenCompConfiguration() {
+async function loadFrameworkConfiguration(frameworkKey: FrameworkIntelligenceKey) {
+  const config = frameworkClaimConfigs[frameworkKey];
   const [frameworkRow] = await db
     .select({ framework: frameworksTable, frameworkVersion: frameworkVersionsTable })
     .from(frameworksTable)
     .innerJoin(frameworkVersionsTable, eq(frameworkVersionsTable.frameworkId, frameworksTable.id))
-    .where(and(eq(frameworksTable.key, "greencomp"), eq(frameworkVersionsTable.versionLabel, "2022")))
+    .where(and(eq(frameworksTable.key, config.key), eq(frameworkVersionsTable.versionLabel, config.versionLabel)))
     .limit(1);
 
   const [lensRow] = await db
     .select({ lens: lensesTable, lensVersion: lensVersionsTable })
     .from(lensesTable)
     .innerJoin(lensVersionsTable, eq(lensVersionsTable.lensId, lensesTable.id))
-    .where(eq(lensesTable.key, "greencomp-curriculum-evidence"))
+    .where(eq(lensesTable.key, config.lensKey))
     .limit(1);
 
-  if (!frameworkRow) throw new Error("GreenComp framework seed is not available");
-  if (!lensRow) throw new Error("GreenComp evidence lens seed is not available");
+  if (!frameworkRow) throw new Error(`${config.name} framework seed is not available`);
+  if (!lensRow) throw new Error(`${config.name} evidence lens seed is not available`);
 
   return {
+    config,
     framework: frameworkRow.framework,
     frameworkVersion: frameworkRow.frameworkVersion,
     lens: lensRow.lens,
@@ -221,14 +301,14 @@ async function loadGreenCompConfiguration() {
   };
 }
 
-async function ensurePromptVersion(context: ClaimActorContext) {
+async function ensurePromptVersion(context: ClaimActorContext, config: typeof frameworkClaimConfigs[FrameworkIntelligenceKey]) {
   const [existing] = await db
     .select()
     .from(promptVersionsTable)
     .where(
       and(
         eq(promptVersionsTable.institutionId, context.institutionId),
-        eq(promptVersionsTable.key, promptKey),
+        eq(promptVersionsTable.key, config.promptKey),
         eq(promptVersionsTable.versionLabel, promptVersionLabel),
       ),
     )
@@ -240,12 +320,12 @@ async function ensurePromptVersion(context: ClaimActorContext) {
     .insert(promptVersionsTable)
     .values({
       institutionId: context.institutionId,
-      key: promptKey,
-      name: "GreenComp evidence claim foundation",
+      key: config.promptKey,
+      name: config.promptName,
       versionLabel: promptVersionLabel,
       status: "active",
-      systemPrompt: "Deterministic CAST GreenComp evidence-claim foundation. No AI model call is made in Phase 6B.1.",
-      userPromptTemplate: "Create provisional GreenComp evidence claims only when linked evidence exists.",
+      systemPrompt: `Deterministic CAST ${config.name} evidence-claim foundation. No AI model call is made.`,
+      userPromptTemplate: `Create provisional ${config.name} evidence claims only when linked evidence exists.`,
       outputSchema: {
         claimText: "string",
         rationale: "string",
@@ -255,7 +335,7 @@ async function ensurePromptVersion(context: ClaimActorContext) {
       configuration: {
         phase: "6B.1",
         deterministic: true,
-        framework: "greencomp",
+        framework: config.key,
       },
       createdByUserId: context.userId,
     })
@@ -339,8 +419,8 @@ async function existingGenerationClaims(context: ClaimActorContext, moduleId: st
   );
 }
 
-function generationKey(moduleId: string, competencyId: string, evidenceIds: string[]): string {
-  return `greencomp:${moduleId}:${competencyId}:${evidenceIds.sort().join(",")}`;
+function generationKey(frameworkKey: FrameworkIntelligenceKey, moduleId: string, competencyId: string, evidenceIds: string[]): string {
+  return `${frameworkKey}:${moduleId}:${competencyId}:${evidenceIds.sort().join(",")}`;
 }
 
 function maturityForEvidence(matchCount: number, evidenceCount: number) {
@@ -362,8 +442,10 @@ async function placementForModule(context: ClaimActorContext, moduleId: string) 
   return row;
 }
 
-async function ensureGreenCompEvaluation(input: {
+async function ensureFrameworkEvaluation(input: {
   context: ClaimActorContext;
+  frameworkKey: FrameworkIntelligenceKey;
+  frameworkName: string;
   moduleId: string;
   moduleDescriptorId?: string | null;
   lensVersionId: string;
@@ -403,7 +485,7 @@ async function ensureGreenCompEvaluation(input: {
       rationale: input.rationale,
       createdByUserId: input.context.userId,
       metadata: {
-        framework: "greencomp",
+        framework: input.frameworkKey,
         generationKey: input.generationKey,
         deterministic: true,
         aiCallMade: false,
@@ -420,7 +502,7 @@ async function ensureGreenCompEvaluation(input: {
         competencyEvaluationId: evaluation.id,
         evidenceItemId: item.id,
         relevance: input.confidence,
-        notes: "Linked during deterministic GreenComp analysis.",
+        notes: `Linked during deterministic ${input.frameworkName} analysis.`,
       })),
     ).onConflictDoNothing();
   }
@@ -475,16 +557,18 @@ function reviewDto(row: {
   };
 }
 
-export async function generateGreenCompClaimsForModule(
+export async function generateFrameworkClaimsForModule(
   context: ClaimActorContext,
   moduleId: string,
+  frameworkKey: FrameworkIntelligenceKey,
 ): Promise<ClaimGenerationResponse> {
   const module = await loadCanonicalModule(context, moduleId);
   if (!module) throw new Error("Module not found");
 
-  const [{ framework, frameworkVersion, lensVersion }, promptVersion, moduleEvidence] = await Promise.all([
-    loadGreenCompConfiguration(),
-    ensurePromptVersion(context),
+  const frameworkConfiguration = await loadFrameworkConfiguration(frameworkKey);
+  const { config, framework, frameworkVersion, lensVersion } = frameworkConfiguration;
+  const [promptVersion, moduleEvidence] = await Promise.all([
+    ensurePromptVersion(context, config),
     loadModuleEvidence(context, moduleId),
   ]);
 
@@ -503,7 +587,7 @@ export async function generateGreenCompClaimsForModule(
       startedAt,
       configuration: {
         phase: "6B.1",
-        framework: "greencomp",
+        framework: config.key,
         claimOnly: true,
         deterministic: true,
       },
@@ -517,7 +601,7 @@ export async function generateGreenCompClaimsForModule(
       analysisRunId: analysisRun.id,
       promptVersionId: promptVersion.id,
       provider: deterministicProvider,
-      model: deterministicModel,
+      model: config.model,
       status: "running",
       modelConfiguration: {
         deterministic: true,
@@ -563,7 +647,7 @@ export async function generateGreenCompClaimsForModule(
   let evaluationsCreated = 0;
 
   for (const row of competencies) {
-    const rule = greenCompRules.find((candidate) => candidate.key === row.competency.key);
+    const rule = config.rules.find((candidate) => candidate.key === row.competency.key);
     if (!rule) continue;
 
     const scoredEvidence = moduleEvidence.evidence
@@ -575,15 +659,17 @@ export async function generateGreenCompClaimsForModule(
     if (scoredEvidence.length === 0) continue;
 
     const evidenceIds = scoredEvidence.map((candidate) => candidate.item.id);
-    const key = generationKey(moduleId, row.competency.id, evidenceIds);
+    const key = generationKey(config.key, moduleId, row.competency.id, evidenceIds);
     const matchCount = scoredEvidence.reduce((sum, candidate) => sum + candidate.score, 0);
     const competencyCode = formatCompetencyCode(row.competency);
     const confidence = confidenceFor(matchCount, scoredEvidence.length);
     const rationale = `This provisional claim is based on ${scoredEvidence.length} linked evidence source${scoredEvidence.length === 1 ? "" : "s"} containing terms associated with ${row.competency.name}.`;
 
     if (existingClaimsByKey.has(key)) {
-      const evaluation = await ensureGreenCompEvaluation({
+      const evaluation = await ensureFrameworkEvaluation({
         context,
+        frameworkKey: config.key,
+        frameworkName: config.name,
         moduleId,
         moduleDescriptorId: moduleEvidence.descriptors.at(-1)?.id,
         lensVersionId: lensVersion.id,
@@ -623,16 +709,16 @@ export async function generateGreenCompClaimsForModule(
         competencyId: row.competency.id,
         claimType: "competency_observation",
         status: "needs_review",
-        title: `GreenComp ${competencyCode}: ${row.competency.name}`,
-        claimText: `Evidence suggests this module addresses GreenComp competence ${competencyCode} (${row.competency.name}).`,
+        title: `${config.name} ${competencyCode}: ${row.competency.name}`,
+        claimText: `Evidence suggests this module contributes to ${config.name} competence ${competencyCode} (${row.competency.name}).`,
         rationale,
         confidence,
         metadata: {
           phase: "6B.1",
-          frameworkKey: "greencomp",
+          frameworkKey: config.key,
           frameworkName: framework.name,
           frameworkVersion: frameworkVersion.versionLabel,
-          lensKey: "greencomp-curriculum-evidence",
+          lensKey: config.lensKey,
           deterministic: true,
           aiCallMade: false,
           claimOnly: true,
@@ -654,8 +740,10 @@ export async function generateGreenCompClaimsForModule(
       })),
     );
 
-    const evaluation = await ensureGreenCompEvaluation({
+    const evaluation = await ensureFrameworkEvaluation({
       context,
+      frameworkKey: config.key,
+      frameworkName: config.name,
       moduleId,
       moduleDescriptorId: moduleEvidence.descriptors.at(-1)?.id,
       lensVersionId: lensVersion.id,
@@ -699,13 +787,20 @@ export async function generateGreenCompClaimsForModule(
     evaluationsCreated,
     evidenceConsidered: moduleEvidence.evidence.length,
     message: claimsCreated > 0
-      ? `Generated ${claimsCreated} provisional GreenComp claim${claimsCreated === 1 ? "" : "s"}.`
-      : "No new GreenComp claims were generated from the available evidence.",
+      ? `Generated ${claimsCreated} provisional ${config.name} claim${claimsCreated === 1 ? "" : "s"}.`
+      : `No new ${config.name} claims were generated from the available evidence.`,
     claims: claims.claims,
   };
 }
 
-async function moduleIdsForGreenCompScope(context: ClaimActorContext, scope: GreenCompBulkGenerationScope, targetId?: string) {
+export async function generateGreenCompClaimsForModule(
+  context: ClaimActorContext,
+  moduleId: string,
+): Promise<ClaimGenerationResponse> {
+  return generateFrameworkClaimsForModule(context, moduleId, "greencomp");
+}
+
+async function moduleIdsForFrameworkScope(context: ClaimActorContext, scope: GreenCompBulkGenerationScope, targetId?: string) {
   if (scope === "module") {
     if (!targetId) throw new Error("moduleId is required for current module analysis");
     const module = await loadCanonicalModule(context, targetId);
@@ -731,15 +826,15 @@ async function moduleIdsForGreenCompScope(context: ClaimActorContext, scope: Gre
   return rows.map((row) => row.id);
 }
 
-export async function generateGreenCompClaimsForScope(
+export async function generateFrameworkClaimsForScope(
   context: ClaimActorContext,
-  input: { scope: GreenCompBulkGenerationScope; targetId?: string },
+  input: { frameworkKey: FrameworkIntelligenceKey; scope: GreenCompBulkGenerationScope; targetId?: string },
 ): Promise<GreenCompBulkGenerationResponse> {
-  const moduleIds = await moduleIdsForGreenCompScope(context, input.scope, input.targetId);
+  const moduleIds = await moduleIdsForFrameworkScope(context, input.scope, input.targetId);
   const results: GreenCompBulkGenerationResponse["results"] = [];
 
   for (const id of moduleIds) {
-    const result = await generateGreenCompClaimsForModule(context, id);
+    const result = await generateFrameworkClaimsForModule(context, id, input.frameworkKey);
     results.push({
       moduleId: id,
       claimsCreated: result.claimsCreated,
@@ -765,6 +860,13 @@ export async function generateGreenCompClaimsForScope(
     evidenceConsidered,
     results,
   };
+}
+
+export async function generateGreenCompClaimsForScope(
+  context: ClaimActorContext,
+  input: { scope: GreenCompBulkGenerationScope; targetId?: string },
+): Promise<GreenCompBulkGenerationResponse> {
+  return generateFrameworkClaimsForScope(context, { frameworkKey: "greencomp", ...input });
 }
 
 export async function listClaimsForModule(context: ClaimActorContext, moduleId: string): Promise<ModuleClaimsResponse> {

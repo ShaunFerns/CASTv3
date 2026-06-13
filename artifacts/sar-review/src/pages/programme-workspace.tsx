@@ -584,15 +584,31 @@ function FrameworkHeatmap({ projection, frameworkKey }: { projection: ProgrammeM
 }
 
 const greenCompAreaDefinitions = [
-  { name: "Embodying values", terms: ["valuing sustainability", "supporting fairness", "promoting nature"] },
-  { name: "Embracing complexity", terms: ["systems thinking", "critical thinking", "problem framing"] },
-  { name: "Sustainable futures", terms: ["futures literacy", "adaptability", "exploratory thinking"] },
-  { name: "Acting for sustainability", terms: ["political agency", "collective action", "individual initiative"] },
+  { name: "Embodying values", terms: ["valuing sustainability", "supporting fairness", "promoting nature"], competencies: ["Valuing sustainability", "Supporting fairness", "Promoting nature"] },
+  { name: "Embracing complexity", terms: ["systems thinking", "critical thinking", "problem framing"], competencies: ["Systems thinking", "Critical thinking", "Problem framing"] },
+  { name: "Sustainable futures", terms: ["futures literacy", "adaptability", "exploratory thinking"], competencies: ["Futures literacy", "Adaptability", "Exploratory thinking"] },
+  { name: "Acting for sustainability", terms: ["political agency", "collective action", "individual initiative"], competencies: ["Political agency", "Collective action", "Individual initiative"] },
 ];
 
-function ProgrammeGreenCompRadar({ projection }: { projection: ProgrammeMapVisualProjection | null }) {
+const frameworkAreaDefinitions: Record<string, Array<{ name: string; terms: string[]; competencies: string[] }>> = {
+  greencomp: greenCompAreaDefinitions,
+  digcomp: [
+    { name: "Information and data literacy", terms: ["browsing", "searching", "filtering", "evaluating data", "managing data"], competencies: ["Browsing, searching and filtering data, information and digital content", "Evaluating data, information and digital content", "Managing data, information and digital content"] },
+    { name: "Communication and collaboration", terms: ["interacting", "sharing", "citizenship", "collaborating", "netiquette", "identity"], competencies: ["Interacting through digital technologies", "Sharing through digital technologies", "Engaging in citizenship through digital technologies", "Collaborating through digital technologies", "Netiquette", "Managing digital identity"] },
+    { name: "Digital content creation", terms: ["developing digital", "integrating", "copyright", "programming"], competencies: ["Developing digital content", "Integrating and re-elaborating digital content", "Copyright and licences", "Programming"] },
+    { name: "Safety", terms: ["protecting devices", "personal data", "privacy", "health", "environment"], competencies: ["Protecting devices", "Protecting personal data and privacy", "Protecting health and well-being", "Protecting the environment"] },
+    { name: "Problem solving", terms: ["technical problems", "technological responses", "creatively using", "digital competence gaps"], competencies: ["Solving technical problems", "Identifying needs and technological responses", "Creatively using digital technology", "Identifying digital competence gaps"] },
+  ],
+  entrecomp: [
+    { name: "Ideas and opportunities", terms: ["spotting opportunities", "creativity", "vision", "valuing ideas", "ethical"], competencies: ["Spotting opportunities", "Creativity", "Vision", "Valuing ideas", "Ethical and sustainable thinking"] },
+    { name: "Resources", terms: ["self-awareness", "motivation", "mobilising resources", "financial", "mobilising others"], competencies: ["Self-awareness and self-efficacy", "Motivation and perseverance", "Mobilising resources", "Financial and economic literacy", "Mobilising others"] },
+    { name: "Into action", terms: ["initiative", "planning", "uncertainty", "working with others", "learning through experience"], competencies: ["Taking the initiative", "Planning and management", "Coping with uncertainty, ambiguity and risk", "Working with others", "Learning through experience"] },
+  ],
+};
+
+function ProgrammeFrameworkRadar({ projection, frameworkKey }: { projection: ProgrammeMapVisualProjection | null; frameworkKey: string }) {
   const indicators = (projection?.rows ?? []).flatMap((row) => {
-    const layer = row.layers.find((candidate) => candidate.key === "framework:greencomp");
+    const layer = row.layers.find((candidate) => candidate.key === `framework:${frameworkKey}`);
     return (layer?.indicators ?? []).map((indicator) => ({
       ...indicator,
       moduleId: row.module.id,
@@ -603,7 +619,8 @@ function ProgrammeGreenCompRadar({ projection }: { projection: ProgrammeMapVisua
   const size = 240;
   const centre = size / 2;
   const radius = 82;
-  const areas = greenCompAreaDefinitions.map((area, index) => {
+  const areaDefinitions = frameworkAreaDefinitions[frameworkKey] ?? [];
+  const areas = areaDefinitions.map((area, index) => {
     const matches = indicators.filter((indicator) => {
       const name = indicator.competencyName?.toLowerCase() ?? "";
       return area.terms.some((term) => name.includes(term));
@@ -616,7 +633,7 @@ function ProgrammeGreenCompRadar({ projection }: { projection: ProgrammeMapVisua
       modules.set(match.moduleId, current);
     }
     const score = matches.length ? matches.reduce((sum, indicator) => sum + scoreForMaturity(indicator.observedLevel), 0) / matches.length : 0;
-    const angle = -Math.PI / 2 + (index * 2 * Math.PI) / greenCompAreaDefinitions.length;
+    const angle = -Math.PI / 2 + (index * 2 * Math.PI) / Math.max(1, areaDefinitions.length);
     return { ...area, matches, modules: [...modules.entries()], score, angle };
   });
   const polygon = areas.map((area) => {
@@ -626,7 +643,7 @@ function ProgrammeGreenCompRadar({ projection }: { projection: ProgrammeMapVisua
 
   return (
     <div className="grid gap-5 lg:grid-cols-[260px_1fr]">
-      <svg viewBox={`0 0 ${size} ${size}`} role="img" aria-label="Programme GreenComp radar" className="mx-auto h-60 w-60">
+      <svg viewBox={`0 0 ${size} ${size}`} role="img" aria-label={`Programme ${frameworkLabel(frameworkKey)} radar`} className="mx-auto h-60 w-60">
         {[0.33, 0.66, 1].map((scale) => (
           <polygon key={scale} points={areas.map((area) => `${centre + Math.cos(area.angle) * radius * scale},${centre + Math.sin(area.angle) * radius * scale}`).join(" ")} fill="none" stroke="#dbe4ef" />
         ))}
@@ -662,7 +679,7 @@ function ProgrammeGreenCompRadar({ projection }: { projection: ProgrammeMapVisua
   );
 }
 
-function ProgrammeGreenCompCoverage({ projection }: { projection: ProgrammeMapVisualProjection | null }) {
+function ProgrammeFrameworkCoverage({ projection, frameworkKey }: { projection: ProgrammeMapVisualProjection | null; frameworkKey: string }) {
   const rows = projection?.rows ?? [];
   const byCompetency = new Map<string, {
     name: string;
@@ -671,7 +688,7 @@ function ProgrammeGreenCompCoverage({ projection }: { projection: ProgrammeMapVi
   }>();
 
   for (const row of rows) {
-    const layer = row.layers.find((candidate) => candidate.key === "framework:greencomp");
+    const layer = row.layers.find((candidate) => candidate.key === `framework:${frameworkKey}`);
     for (const indicator of layer?.indicators ?? []) {
       const name = indicator.competencyName ?? "Framework observation";
       const moduleId = row.module.id ?? row.id;
@@ -694,8 +711,8 @@ function ProgrammeGreenCompCoverage({ projection }: { projection: ProgrammeMapVi
 
   const covered = [...byCompetency.values()].filter((item) => item.evidence > 0).sort((a, b) => b.evidence - a.evidence);
   const coveredNames = new Set(covered.map((item) => item.name.toLowerCase()));
-  const notCovered = greenCompAreaDefinitions
-    .flatMap((area) => area.terms.map((term) => ({ area: area.name, name: term.replace(/\b\w/g, (char) => char.toUpperCase()) })))
+  const notCovered = (frameworkAreaDefinitions[frameworkKey] ?? [])
+    .flatMap((area) => area.competencies.map((name) => ({ area: area.name, name })))
     .filter((item) => !coveredNames.has(item.name.toLowerCase()));
 
   const distributionLabel = (moduleCount: number) => {
@@ -717,7 +734,7 @@ function ProgrammeGreenCompCoverage({ projection }: { projection: ProgrammeMapVi
         <table className="w-full min-w-[860px] text-left text-sm">
           <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
             <tr>
-              <th className="p-3">GreenComp competence</th>
+              <th className="p-3">{frameworkLabel(frameworkKey)} competence</th>
               <th className="p-3">Where it appears</th>
               <th className="p-3">Scaffolding</th>
               <th className="p-3">Distribution</th>
@@ -750,7 +767,7 @@ function ProgrammeGreenCompCoverage({ projection }: { projection: ProgrammeMapVi
             })}
             {covered.length === 0 && (
               <tr>
-                <td colSpan={5} className="p-4 text-sm text-slate-500">No GreenComp programme coverage is visible in the selected analysis view yet.</td>
+                <td colSpan={5} className="p-4 text-sm text-slate-500">No {frameworkLabel(frameworkKey)} programme coverage is visible in the selected analysis view yet.</td>
               </tr>
             )}
           </tbody>
@@ -770,7 +787,7 @@ function ProgrammeGreenCompCoverage({ projection }: { projection: ProgrammeMapVi
           <div className="font-semibold text-slate-950">Not covered in current evidence</div>
           <div className="mt-3 flex flex-wrap gap-2">
             {notCovered.map((item) => <Badge key={`${item.area}-${item.name}`} variant="outline">{item.name}</Badge>)}
-            {notCovered.length === 0 && <span className="text-sm text-slate-500">All GreenComp competencies have some programme-level evidence.</span>}
+            {notCovered.length === 0 && <span className="text-sm text-slate-500">All {frameworkLabel(frameworkKey)} competencies have some programme-level evidence.</span>}
           </div>
         </div>
       </div>
@@ -992,8 +1009,8 @@ export default function ProgrammeWorkspace() {
   const [visualFramework, setVisualFramework] = useState<(typeof frameworkVisualKeys)[number]>("greencomp");
   const [visualCoverage, setVisualCoverage] = useState<Record<string, FrameworkCoverageSummary | undefined>>({});
   const [visualProjection, setVisualProjection] = useState<ProgrammeMapVisualProjection | null>(null);
-  const [greenCompGenerating, setGreenCompGenerating] = useState<"programme" | "institution" | null>(null);
-  const [greenCompGenerationMessage, setGreenCompGenerationMessage] = useState("");
+  const [frameworkGenerating, setFrameworkGenerating] = useState<"programme" | "institution" | null>(null);
+  const [frameworkGenerationMessage, setFrameworkGenerationMessage] = useState("");
   const [comparisonOptions, setComparisonOptions] = useState<ComparisonOptions>({ programmeVersions: [], snapshots: [], uploads: [] });
   const [comparisonMode, setComparisonMode] = useState<ComparisonMode>("programme_version");
   const [comparisonLeftId, setComparisonLeftId] = useState("");
@@ -1137,23 +1154,23 @@ export default function ProgrammeWorkspace() {
     setOverview(await api<ProgrammeOverview>(`/api/programme-workspace/programme-versions/${selectedProgrammeId}/overview`));
   }
 
-  async function generateGreenCompAnalysis(scope: "programme" | "institution") {
+  async function generateFrameworkAnalysis(scope: "programme" | "institution") {
     if (scope === "programme" && !selectedProgrammeId) return;
-    setGreenCompGenerating(scope);
-    setGreenCompGenerationMessage("");
+    setFrameworkGenerating(scope);
+    setFrameworkGenerationMessage("");
     try {
-      const result = await api<GreenCompBulkGenerationResponse>("/api/claims/greencomp/generate", {
+      const result = await api<GreenCompBulkGenerationResponse>(`/api/claims/frameworks/${visualFramework}/generate`, {
         method: "POST",
         body: JSON.stringify({ scope, targetId: scope === "programme" ? selectedProgrammeId : undefined }),
       });
-      setGreenCompGenerationMessage(
-        `GreenComp analysis complete: ${result.modulesAnalysed} modules checked, ${result.claimsCreated} claims created, ${result.evaluationsCreated} map signals created.`,
+      setFrameworkGenerationMessage(
+        `${frameworkLabel(visualFramework)} analysis complete: ${result.modulesAnalysed} modules checked, ${result.claimsCreated} claims created, ${result.evaluationsCreated} map signals created.`,
       );
       await Promise.all([loadOverview(), loadVisualIntelligence()]);
     } catch (error) {
-      setGreenCompGenerationMessage(error instanceof Error ? error.message : "GreenComp analysis could not be generated.");
+      setFrameworkGenerationMessage(error instanceof Error ? error.message : `${frameworkLabel(visualFramework)} analysis could not be generated.`);
     } finally {
-      setGreenCompGenerating(null);
+      setFrameworkGenerating(null);
     }
   }
 
@@ -1560,19 +1577,25 @@ export default function ProgrammeWorkspace() {
                   <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
                     <Button
                       variant="outline"
-                      onClick={() => void generateGreenCompAnalysis("programme")}
-                      disabled={!selectedProgrammeId || Boolean(greenCompGenerating)}
+                      onClick={() => void generateFrameworkAnalysis("programme")}
+                      disabled={!selectedProgrammeId || Boolean(frameworkGenerating)}
                     >
                       <Sparkles className="mr-2 h-4 w-4" />
-                      {greenCompGenerating === "programme" ? "Generating..." : "Generate GreenComp"}
+                      {frameworkGenerating === "programme" ? "Generating..." : `Generate ${frameworkLabel(visualFramework)}`}
                     </Button>
                     <Button
                       variant="outline"
-                      onClick={() => void generateGreenCompAnalysis("institution")}
-                      disabled={Boolean(greenCompGenerating)}
+                      onClick={() => void generateFrameworkAnalysis("institution")}
+                      disabled={Boolean(frameworkGenerating)}
                     >
                       Institution
                     </Button>
+                    <Select value={visualFramework} onValueChange={(value) => setVisualFramework(value as typeof visualFramework)}>
+                      <SelectTrigger className="w-full sm:w-[160px]"><SelectValue placeholder="Framework" /></SelectTrigger>
+                      <SelectContent>
+                        {frameworkVisualKeys.map((key) => <SelectItem key={key} value={key}>{frameworkLabel(key)}</SelectItem>)}
+                      </SelectContent>
+                    </Select>
                     <Select value={visualAnalysisMode} onValueChange={(value) => setVisualAnalysisMode(value as VisualAnalysisMode)}>
                       <SelectTrigger className="w-full sm:w-[160px]"><SelectValue placeholder="Analysis view" /></SelectTrigger>
                       <SelectContent>
@@ -1593,27 +1616,27 @@ export default function ProgrammeWorkspace() {
                       ? "Only reviewed or confirmed framework observations are shown."
                       : "Provisional analysis is visible. Review required before formal use."}
                   </div>
-                  {greenCompGenerationMessage && (
+                  {frameworkGenerationMessage && (
                     <div className="rounded border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-800">
-                      {greenCompGenerationMessage}
+                      {frameworkGenerationMessage}
                     </div>
                   )}
                   <Card className="border-emerald-200 bg-emerald-50/40 shadow-none">
                     <CardHeader>
-                      <CardTitle className="text-base">GreenComp Programme Radar</CardTitle>
-                      <p className="text-sm text-slate-600">Programme-level view of coverage and scaffolding across the four GreenComp areas. Module chips open the contributing module in Module Builder.</p>
+                      <CardTitle className="text-base">{frameworkLabel(visualFramework)} Programme Radar</CardTitle>
+                      <p className="text-sm text-slate-600">Programme-level view of coverage and scaffolding across {frameworkLabel(visualFramework)} areas. Module chips open the contributing module in Module Builder.</p>
                     </CardHeader>
                     <CardContent>
-                      <ProgrammeGreenCompRadar projection={visualProjection} />
+                      <ProgrammeFrameworkRadar projection={visualProjection} frameworkKey={visualFramework} />
                     </CardContent>
                   </Card>
                   <Card className="border-slate-200 shadow-none">
                     <CardHeader>
-                      <CardTitle className="text-base">GreenComp Coverage and Scaffolding</CardTitle>
+                      <CardTitle className="text-base">{frameworkLabel(visualFramework)} Coverage and Scaffolding</CardTitle>
                       <p className="text-sm text-slate-600">At programme level, CAST highlights which competencies are covered, where they appear, and whether evidence is concentrated or distributed across stages and semesters.</p>
                     </CardHeader>
                     <CardContent>
-                      <ProgrammeGreenCompCoverage projection={visualProjection} />
+                      <ProgrammeFrameworkCoverage projection={visualProjection} frameworkKey={visualFramework} />
                     </CardContent>
                   </Card>
                   <div className="grid gap-4 xl:grid-cols-[1fr_1.2fr]">

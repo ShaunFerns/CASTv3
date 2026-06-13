@@ -1,10 +1,13 @@
 import { Router, type IRouter, type Request } from "express";
 import {
+  generateFrameworkClaimsForModule,
+  generateFrameworkClaimsForScope,
   generateGreenCompClaimsForScope,
   generateGreenCompClaimsForModule,
   listReviewsForClaim,
   listClaimsForModule,
   reviewClaim,
+  type FrameworkIntelligenceKey,
   type GreenCompBulkGenerationScope,
   type ClaimReviewDecision,
 } from "../../lib/evidenceClaims/service.js";
@@ -44,10 +47,25 @@ function claimId(req: Request): string {
   return resolved.trim();
 }
 
+function frameworkKey(req: Request): FrameworkIntelligenceKey {
+  const value = req.params.frameworkKey;
+  const resolved = Array.isArray(value) ? value[0] : value;
+  if (resolved === "greencomp" || resolved === "digcomp" || resolved === "entrecomp") return resolved;
+  throw new Error("Choose a valid framework: greencomp, digcomp or entrecomp");
+}
+
 function greenCompScopeBody(body: unknown): { scope: GreenCompBulkGenerationScope; targetId?: string } {
   const payload = typeof body === "object" && body !== null ? body as Record<string, unknown> : {};
   const scope = typeof payload.scope === "string" ? payload.scope : "";
   if (!["module", "programme", "institution"].includes(scope)) throw new Error("Choose a valid GreenComp analysis scope");
+  const targetId = typeof payload.targetId === "string" && payload.targetId.trim() ? payload.targetId.trim() : undefined;
+  return { scope: scope as GreenCompBulkGenerationScope, targetId };
+}
+
+function frameworkScopeBody(body: unknown): { scope: GreenCompBulkGenerationScope; targetId?: string } {
+  const payload = typeof body === "object" && body !== null ? body as Record<string, unknown> : {};
+  const scope = typeof payload.scope === "string" ? payload.scope : "";
+  if (!["module", "programme", "institution"].includes(scope)) throw new Error("Choose a valid framework analysis scope");
   const targetId = typeof payload.targetId === "string" && payload.targetId.trim() ? payload.targetId.trim() : undefined;
   return { scope: scope as GreenCompBulkGenerationScope, targetId };
 }
@@ -137,6 +155,51 @@ router.post(
 );
 
 router.post(
+  "/claims/modules/:moduleId/frameworks/:frameworkKey/generate",
+  ...protectedClaims,
+  requirePermission("curriculum.write"),
+  async (req, res): Promise<void> => {
+    const selectedModuleId = moduleId(req);
+    let selectedFramework: FrameworkIntelligenceKey = "greencomp";
+    try {
+      selectedFramework = frameworkKey(req);
+      const result = await generateFrameworkClaimsForModule(context(req), selectedModuleId, selectedFramework);
+      writeRequestAuditEventSoon({
+        req,
+        actionType: `claims.${selectedFramework}_generated`,
+        subjectType: "module",
+        subjectId: selectedModuleId,
+        metadata: {
+          frameworkKey: selectedFramework,
+          analysisRunId: result.analysisRunId,
+          claimsCreated: result.claimsCreated,
+          claimsSkipped: result.claimsSkipped,
+          evaluationsCreated: result.evaluationsCreated,
+          evidenceConsidered: result.evidenceConsidered,
+          deterministic: true,
+        },
+      });
+      res.json(result);
+    } catch (error) {
+      writeRequestAuditEventSoon({
+        req,
+        actionType: `claims.${selectedFramework}_generation_failed`,
+        subjectType: "module",
+        subjectId: selectedModuleId,
+        metadata: {
+          frameworkKey: selectedFramework,
+          error: error instanceof Error ? error.message : "Unknown error",
+          deterministic: true,
+        },
+      });
+      const message = error instanceof Error ? error.message : "Framework analysis could not be generated";
+      const status = message === "Module not found" ? 404 : message.includes("valid framework") ? 400 : 500;
+      res.status(status).json({ error: status === 404 ? "not_found" : status === 400 ? "bad_request" : "claims_error", message });
+    }
+  },
+);
+
+router.post(
   "/claims/greencomp/generate",
   ...protectedClaims,
   requirePermission("curriculum.write"),
@@ -172,6 +235,52 @@ router.post(
         },
       });
       const message = error instanceof Error ? error.message : "GreenComp analysis could not be generated";
+      const status = message.includes("required") || message.includes("valid") ? 400 : message.includes("not found") ? 404 : 500;
+      res.status(status).json({ error: status === 400 ? "bad_request" : status === 404 ? "not_found" : "claims_error", message });
+    }
+  },
+);
+
+router.post(
+  "/claims/frameworks/:frameworkKey/generate",
+  ...protectedClaims,
+  requirePermission("curriculum.write"),
+  async (req, res): Promise<void> => {
+    let selectedFramework: FrameworkIntelligenceKey = "greencomp";
+    try {
+      selectedFramework = frameworkKey(req);
+      const input = frameworkScopeBody(req.body);
+      const result = await generateFrameworkClaimsForScope(context(req), { frameworkKey: selectedFramework, ...input });
+      writeRequestAuditEventSoon({
+        req,
+        actionType: `claims.${selectedFramework}_bulk_generated`,
+        subjectType: input.scope === "module" ? "module" : input.scope === "programme" ? "programme_version" : "institution",
+        subjectId: input.targetId,
+        metadata: {
+          frameworkKey: selectedFramework,
+          scope: input.scope,
+          modulesAnalysed: result.modulesAnalysed,
+          modulesWithClaims: result.modulesWithClaims,
+          claimsCreated: result.claimsCreated,
+          claimsSkipped: result.claimsSkipped,
+          evaluationsCreated: result.evaluationsCreated,
+          evidenceConsidered: result.evidenceConsidered,
+          deterministic: true,
+        },
+      });
+      res.json(result);
+    } catch (error) {
+      writeRequestAuditEventSoon({
+        req,
+        actionType: `claims.${selectedFramework}_bulk_generation_failed`,
+        subjectType: "framework",
+        metadata: {
+          frameworkKey: selectedFramework,
+          error: error instanceof Error ? error.message : "Unknown error",
+          deterministic: true,
+        },
+      });
+      const message = error instanceof Error ? error.message : "Framework analysis could not be generated";
       const status = message.includes("required") || message.includes("valid") ? 400 : message.includes("not found") ? 404 : 500;
       res.status(status).json({ error: status === 400 ? "bad_request" : status === 404 ? "not_found" : "claims_error", message });
     }
