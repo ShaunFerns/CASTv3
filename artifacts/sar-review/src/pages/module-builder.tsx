@@ -368,7 +368,7 @@ function buildFrameworkInsights(framework: string, level: string, strengths: str
     insights.push(`Evidence is present, but the contribution may need clearer descriptor or assessment support.`);
   }
   if (gaps.length > 0) {
-    insights.push(`${gaps[0]} is not currently visible as a strong evidence area.`);
+    insights.push(`${gaps[0]} is not evidenced in this module. That may be appropriate depending on the module purpose.`);
   }
   if (evidenceCount >= 6) {
     insights.push("There are multiple evidence sources available for human review.");
@@ -495,11 +495,11 @@ function FrameworkContributionSummary({ frameworks }: { frameworks: FrameworkInt
                 </div>
               </div>
               <div>
-                <div className="text-xs font-medium uppercase text-slate-500">Gaps to consider</div>
+                <div className="text-xs font-medium uppercase text-slate-500">Not evidenced here</div>
                 <div className="mt-2 flex flex-wrap gap-2">
                   {framework.gaps.length > 0
                     ? framework.gaps.map((gap) => <Badge key={gap} variant="outline" className="bg-amber-50 text-amber-800">{gap}</Badge>)
-                    : <span className="text-slate-500">No obvious gaps from current evidence.</span>}
+                    : <span className="text-slate-500">No additional non-evidenced competencies to show.</span>}
                 </div>
               </div>
             </div>
@@ -566,21 +566,13 @@ function GreenCompSummaryCard({ intelligence }: { intelligence?: FrameworkIntell
             </div>
           </div>
         </div>
-        <div className="mt-5 grid gap-4 md:grid-cols-2">
+        <div className="mt-5">
           <div>
-            <div className="text-xs font-medium uppercase text-slate-500">Strongest competencies</div>
+            <div className="text-xs font-medium uppercase text-slate-500">Evidenced competencies</div>
             <div className="mt-2 flex flex-wrap gap-2">
               {intelligence.strengths.length > 0
                 ? intelligence.strengths.map((strength) => <Badge key={strength} className="bg-emerald-100 text-emerald-800 hover:bg-emerald-100">{strength}</Badge>)
-                : <span className="text-sm text-slate-600">No GreenComp strengths are visible in the current evidence yet.</span>}
-            </div>
-          </div>
-          <div>
-            <div className="text-xs font-medium uppercase text-slate-500">Gap competencies</div>
-            <div className="mt-2 flex flex-wrap gap-2">
-              {intelligence.gaps.length > 0
-                ? intelligence.gaps.map((gap) => <Badge key={gap} variant="outline" className="bg-white text-amber-800">{gap}</Badge>)
-                : <span className="text-sm text-slate-600">No obvious GreenComp gaps from current evidence.</span>}
+                : <span className="text-sm text-slate-600">No GreenComp contribution is evidenced in the current module material yet.</span>}
             </div>
           </div>
         </div>
@@ -687,7 +679,7 @@ function GreenCompRadar({ intelligence, claims }: { intelligence?: FrameworkInte
       <div className="space-y-4">
         <div className="grid gap-3 md:grid-cols-2">
           <div className="rounded border border-emerald-100 bg-white p-3">
-            <div className="mb-2 text-sm font-semibold text-slate-950">Strongest competencies</div>
+            <div className="mb-2 text-sm font-semibold text-slate-950">Most evidenced contribution</div>
             <div className="space-y-2">
               {strongest.map((competency) => (
                 <div key={competency.name} className="flex items-center justify-between gap-3 text-sm">
@@ -698,7 +690,7 @@ function GreenCompRadar({ intelligence, claims }: { intelligence?: FrameworkInte
             </div>
           </div>
           <div className="rounded border border-amber-100 bg-white p-3">
-            <div className="mb-2 text-sm font-semibold text-slate-950">Weakest competencies</div>
+            <div className="mb-2 text-sm font-semibold text-slate-950">Not evidenced in this module</div>
             <div className="space-y-2">
               {weakest.map((competency) => (
                 <div key={competency.name} className="flex items-center justify-between gap-3 text-sm">
@@ -710,9 +702,72 @@ function GreenCompRadar({ intelligence, claims }: { intelligence?: FrameworkInte
           </div>
         </div>
         <div className="rounded border border-slate-200 bg-white p-3 text-sm text-slate-600">
-          Radar shape is based on evidence-linked GreenComp claims and evaluations. It explains the module maturity summary; formal use still requires human review.
+          Radar shape is based on evidence-linked GreenComp claims and evaluations. It summarises this module's contribution only; it does not imply every module should cover every GreenComp competence.
         </div>
       </div>
+    </div>
+  );
+}
+
+function GreenCompCompetencyTable({ intelligence, claims }: { intelligence?: FrameworkIntelligence; claims: EvidenceClaim[] }) {
+  if (!intelligence) return null;
+  const greenCompClaims = claims.filter((claim) => frameworkClaimMatches(claim, "greencomp"));
+  const competencyEvidence = new Map<string, { evidenceCount: number; reviewed: boolean }>();
+
+  for (const competency of intelligence.row.competencies) {
+    const current = competencyEvidence.get(competency.name) ?? { evidenceCount: 0, reviewed: false };
+    current.evidenceCount += competency.evidenceLinkCount;
+    current.reviewed = current.reviewed || competency.status === "reviewed";
+    competencyEvidence.set(competency.name, current);
+  }
+  for (const claim of greenCompClaims) {
+    const name = claim.competency?.name;
+    if (!name) continue;
+    const current = competencyEvidence.get(name) ?? { evidenceCount: 0, reviewed: false };
+    current.evidenceCount += claim.evidence.length;
+    current.reviewed = current.reviewed || claim.review.isInstitutionalFinding;
+    competencyEvidence.set(name, current);
+  }
+
+  const rows = greenCompAreas.flatMap((area) => area.competencies.map((name) => {
+    const evidence = competencyEvidence.get(name) ?? { evidenceCount: 0, reviewed: false };
+    return {
+      area: area.name,
+      name,
+      evidenceCount: evidence.evidenceCount,
+      reviewed: evidence.reviewed,
+      level: levelForCompetency(evidence.evidenceCount, evidence.reviewed),
+    };
+  }));
+
+  return (
+    <div className="overflow-auto rounded border border-slate-200">
+      <table className="w-full min-w-[760px] text-left text-sm">
+        <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+          <tr>
+            <th className="p-3">GreenComp area</th>
+            <th className="p-3">Competence</th>
+            <th className="p-3">Module contribution</th>
+            <th className="p-3">Evidence</th>
+            <th className="p-3">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={`${row.area}-${row.name}`} className="border-t border-slate-100">
+              <td className="p-3 text-slate-600">{row.area}</td>
+              <td className="p-3 font-medium text-slate-900">{row.name}</td>
+              <td className="p-3">
+                {row.evidenceCount > 0
+                  ? <Badge className="bg-cyan-100 text-cyan-800 hover:bg-cyan-100">{row.level}</Badge>
+                  : <Badge variant="outline">Not evidenced in this module</Badge>}
+              </td>
+              <td className="p-3 text-slate-600">{row.evidenceCount}</td>
+              <td className="p-3 text-slate-600">{row.reviewed ? "Reviewed" : row.evidenceCount > 0 ? "Provisional" : "No module evidence"}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -982,7 +1037,10 @@ export default function ModuleBuilder() {
               <GreenCompSummaryCard intelligence={greenCompIntelligence} />
 
               <SectionCard title="GreenComp Radar">
-                <GreenCompRadar intelligence={greenCompIntelligence} claims={claims} />
+                <div className="space-y-5">
+                  <GreenCompRadar intelligence={greenCompIntelligence} claims={claims} />
+                  <GreenCompCompetencyTable intelligence={greenCompIntelligence} claims={claims} />
+                </div>
               </SectionCard>
 
               <SectionCard title="Framework Contribution Summary">
@@ -1099,7 +1157,10 @@ export default function ModuleBuilder() {
               </SectionCard>
 
               <SectionCard title="GreenComp Radar">
-                <GreenCompRadar intelligence={greenCompIntelligence} claims={claims} />
+                <div className="space-y-5">
+                  <GreenCompRadar intelligence={greenCompIntelligence} claims={claims} />
+                  <GreenCompCompetencyTable intelligence={greenCompIntelligence} claims={claims} />
+                </div>
               </SectionCard>
 
               <SectionCard title="Supporting Framework Evidence">

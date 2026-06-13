@@ -125,6 +125,8 @@ type FrameworkCoverageSummary = {
 type ProgrammeMapVisualProjection = {
   rows: Array<{
     id: string;
+    stage?: string | null;
+    semester?: string | null;
     module: { id?: string | null; code?: string | null; title?: string | null };
     layers: Array<{
       key: string;
@@ -655,6 +657,122 @@ function ProgrammeGreenCompRadar({ projection }: { projection: ProgrammeMapVisua
             </div>
           </div>
         ))}
+      </div>
+    </div>
+  );
+}
+
+function ProgrammeGreenCompCoverage({ projection }: { projection: ProgrammeMapVisualProjection | null }) {
+  const rows = projection?.rows ?? [];
+  const byCompetency = new Map<string, {
+    name: string;
+    modules: Map<string, { code?: string | null; title?: string | null; stages: Set<string>; semesters: Set<string>; evidence: number }>;
+    evidence: number;
+  }>();
+
+  for (const row of rows) {
+    const layer = row.layers.find((candidate) => candidate.key === "framework:greencomp");
+    for (const indicator of layer?.indicators ?? []) {
+      const name = indicator.competencyName ?? "Framework observation";
+      const moduleId = row.module.id ?? row.id;
+      const current = byCompetency.get(name) ?? { name, modules: new Map(), evidence: 0 };
+      const module = current.modules.get(moduleId) ?? {
+        code: row.module.code,
+        title: row.module.title,
+        stages: new Set<string>(),
+        semesters: new Set<string>(),
+        evidence: 0,
+      };
+      if (row.stage) module.stages.add(row.stage);
+      if (row.semester) module.semesters.add(row.semester);
+      module.evidence += indicator.evidenceCount ?? 0;
+      current.evidence += indicator.evidenceCount ?? 0;
+      current.modules.set(moduleId, module);
+      byCompetency.set(name, current);
+    }
+  }
+
+  const covered = [...byCompetency.values()].filter((item) => item.evidence > 0).sort((a, b) => b.evidence - a.evidence);
+  const coveredNames = new Set(covered.map((item) => item.name.toLowerCase()));
+  const notCovered = greenCompAreaDefinitions
+    .flatMap((area) => area.terms.map((term) => ({ area: area.name, name: term.replace(/\b\w/g, (char) => char.toUpperCase()) })))
+    .filter((item) => !coveredNames.has(item.name.toLowerCase()));
+
+  const distributionLabel = (moduleCount: number) => {
+    if (moduleCount === 0) return "Not covered";
+    if (moduleCount === 1) return "Concentrated in one module";
+    if (moduleCount <= 3) return "Moderately distributed";
+    return "Distributed across programme";
+  };
+  const scaffoldingLabel = (stages: Set<string>, semesters: Set<string>) => {
+    if (stages.size >= 3) return "Scaffolded across stages";
+    if (stages.size >= 2 || semesters.size >= 2) return "Appears across more than one point";
+    if (stages.size === 1 || semesters.size === 1) return "Single stage/semester point";
+    return "Structure not available";
+  };
+
+  return (
+    <div className="grid gap-4 xl:grid-cols-[1.3fr_0.7fr]">
+      <div className="overflow-auto rounded border border-slate-200 bg-white">
+        <table className="w-full min-w-[860px] text-left text-sm">
+          <thead className="bg-slate-50 text-xs uppercase tracking-wide text-slate-500">
+            <tr>
+              <th className="p-3">GreenComp competence</th>
+              <th className="p-3">Where it appears</th>
+              <th className="p-3">Scaffolding</th>
+              <th className="p-3">Distribution</th>
+              <th className="p-3">Evidence</th>
+            </tr>
+          </thead>
+          <tbody>
+            {covered.map((competency) => {
+              const modules = [...competency.modules.entries()];
+              const stages = new Set(modules.flatMap(([, module]) => [...module.stages]));
+              const semesters = new Set(modules.flatMap(([, module]) => [...module.semesters]));
+              return (
+                <tr key={competency.name} className="border-t border-slate-100">
+                  <td className="p-3 font-medium text-slate-900">{competency.name}</td>
+                  <td className="p-3">
+                    <div className="flex flex-wrap gap-2">
+                      {modules.slice(0, 5).map(([moduleId, module]) => (
+                        <a key={moduleId} href={`/module-builder?moduleId=${moduleId}`} className="rounded-full border border-emerald-200 bg-emerald-50 px-2 py-1 text-xs text-emerald-800 hover:bg-emerald-100">
+                          {module.code ?? "No code"}
+                        </a>
+                      ))}
+                      {modules.length > 5 && <Badge variant="outline">+{modules.length - 5} more</Badge>}
+                    </div>
+                  </td>
+                  <td className="p-3 text-slate-600">{scaffoldingLabel(stages, semesters)}</td>
+                  <td className="p-3 text-slate-600">{distributionLabel(modules.length)}</td>
+                  <td className="p-3 text-slate-600">{competency.evidence}</td>
+                </tr>
+              );
+            })}
+            {covered.length === 0 && (
+              <tr>
+                <td colSpan={5} className="p-4 text-sm text-slate-500">No GreenComp programme coverage is visible in the selected analysis view yet.</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+      <div className="space-y-3">
+        <div className="rounded border border-slate-200 bg-white p-4">
+          <div className="font-semibold text-slate-950">Coverage summary</div>
+          <div className="mt-3 grid gap-2 text-sm text-slate-600">
+            <div className="flex justify-between gap-3"><span>Competencies covered</span><strong>{covered.length}</strong></div>
+            <div className="flex justify-between gap-3"><span>Competencies not covered</span><strong>{notCovered.length}</strong></div>
+            <div className="flex justify-between gap-3"><span>Distributed competencies</span><strong>{covered.filter((item) => item.modules.size > 3).length}</strong></div>
+            <div className="flex justify-between gap-3"><span>Concentrated competencies</span><strong>{covered.filter((item) => item.modules.size === 1).length}</strong></div>
+          </div>
+        </div>
+        <div className="rounded border border-slate-200 bg-white p-4">
+          <div className="font-semibold text-slate-950">Not covered in current evidence</div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {notCovered.map((item) => <Badge key={`${item.area}-${item.name}`} variant="outline">{item.name}</Badge>)}
+            {notCovered.length === 0 && <span className="text-sm text-slate-500">All GreenComp competencies have some programme-level evidence.</span>}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -1483,10 +1601,19 @@ export default function ProgrammeWorkspace() {
                   <Card className="border-emerald-200 bg-emerald-50/40 shadow-none">
                     <CardHeader>
                       <CardTitle className="text-base">GreenComp Programme Radar</CardTitle>
-                      <p className="text-sm text-slate-600">Aggregates module contributions across the four GreenComp areas. Module chips open the contributing module in Module Builder.</p>
+                      <p className="text-sm text-slate-600">Programme-level view of coverage and scaffolding across the four GreenComp areas. Module chips open the contributing module in Module Builder.</p>
                     </CardHeader>
                     <CardContent>
                       <ProgrammeGreenCompRadar projection={visualProjection} />
+                    </CardContent>
+                  </Card>
+                  <Card className="border-slate-200 shadow-none">
+                    <CardHeader>
+                      <CardTitle className="text-base">GreenComp Coverage and Scaffolding</CardTitle>
+                      <p className="text-sm text-slate-600">At programme level, CAST highlights which competencies are covered, where they appear, and whether evidence is concentrated or distributed across stages and semesters.</p>
+                    </CardHeader>
+                    <CardContent>
+                      <ProgrammeGreenCompCoverage projection={visualProjection} />
                     </CardContent>
                   </Card>
                   <div className="grid gap-4 xl:grid-cols-[1fr_1.2fr]">
