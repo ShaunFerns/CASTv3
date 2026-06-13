@@ -86,6 +86,7 @@ async function upsertFrameworkVersion(client, seed, frameworkId) {
 }
 
 async function upsertDomain(client, seed, frameworkVersionId, domain, orderIndex) {
+  const family = seed.sourceMetadata.family ?? "european";
   return one(
     client,
     `
@@ -106,12 +107,13 @@ async function upsertDomain(client, seed, frameworkVersionId, domain, orderIndex
       domain.name,
       domain.description,
       orderIndex,
-      JSON.stringify({ code: domain.code, family: "european", framework: seed.key }),
+      JSON.stringify({ code: domain.code, family, framework: seed.key }),
     ],
   );
 }
 
 async function upsertCompetence(client, seed, frameworkVersionId, domainId, competence, orderIndex) {
+  const family = seed.sourceMetadata.family ?? "european";
   return one(
     client,
     `
@@ -134,12 +136,13 @@ async function upsertCompetence(client, seed, frameworkVersionId, domainId, comp
       competence.name,
       competence.description,
       orderIndex,
-      JSON.stringify({ code: competence.code, family: "european", framework: seed.key }),
+      JSON.stringify({ code: competence.code, family, framework: seed.key }),
     ],
   );
 }
 
 async function upsertLens(client, seed) {
+  const family = seed.sourceMetadata.family ?? "european";
   return one(
     client,
     `
@@ -158,7 +161,7 @@ async function upsertLens(client, seed) {
       seed.lensKey,
       seed.lensName,
       `Evidence-informed curriculum mapping lens for ${seed.name}.`,
-      JSON.stringify({ family: "european", framework: seed.key, purpose: "curriculum_evidence_mapping", seed: seed.phase }),
+      JSON.stringify({ family, framework: seed.key, purpose: "curriculum_evidence_mapping", seed: seed.phase }),
     ],
   );
 }

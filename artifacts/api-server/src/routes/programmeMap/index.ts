@@ -21,6 +21,7 @@ import {
   createProgrammeGraduateAttribute,
   getDigCompCoverageSummary,
   getEntreCompCoverageSummary,
+  getFrameworkCoverageSummaryByKey,
   getFrameworkExpectationAnalysis,
   getFrameworkFamilies,
   getFrameworkRegistry,
@@ -248,6 +249,15 @@ router.get(
   requirePermission("programme.read"),
   async (req, res): Promise<void> => {
     res.json(await getDigCompCoverageSummary(context(req), idParam(req, "programmeVersionId"), analysisStatus(req)));
+  },
+);
+
+router.get(
+  "/programme-map/programme-versions/:programmeVersionId/frameworks/:frameworkKey/coverage-summary",
+  ...protectedProgrammeMap,
+  requirePermission("programme.read"),
+  async (req, res): Promise<void> => {
+    res.json(await getFrameworkCoverageSummaryByKey(context(req), idParam(req, "programmeVersionId"), idParam(req, "frameworkKey"), analysisStatus(req)));
   },
 );
 

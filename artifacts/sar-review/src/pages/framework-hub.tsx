@@ -97,6 +97,23 @@ const frameworks: FrameworkPage[] = [
     mapInterpretation: "DigComp indicators show how digital competence evidence is distributed across modules and stages.",
   },
   {
+    key: "engineers-ireland",
+    name: "Engineers Ireland",
+    family: "Professional and Accreditation Frameworks",
+    status: "active",
+    version: "2021",
+    purpose: "Professional accreditation framework for engineering education programme outcomes.",
+    overview: "Engineers Ireland accreditation criteria define programme outcomes, programme areas and programme management expectations for engineering education programmes seeking professional accreditation.",
+    domains: [
+      { name: "Programme Outcomes", competences: ["Knowledge and Understanding", "Problem Analysis", "Design", "Investigation", "Professional and Ethical Responsibilities", "Teamwork and Lifelong Learning", "Communication", "Engineering Management"] },
+      { name: "Programme Areas", competences: ["Science and Mathematics", "Discipline-specific Technology", "Software and Information Systems", "Creativity and Innovation", "Societal and Business Context", "Engineering Practice", "Sustainability"] },
+      { name: "Programme Management Criteria", competences: ["Entry Standards, Transfer and Mobility", "Duration and Structure", "Objectives, Resourcing and Viability", "Assessment of Student Performance", "Programme Development and Quality Assurance"] },
+    ],
+    castUse: "CAST uses Engineers Ireland Programme Outcomes as an evidence-informed professional accreditation layer over modules, programme maps and review workspaces.",
+    examples: ["Programme outcomes linked to module evidence", "Accreditation evidence distribution across stages", "Professional and ethical responsibilities visible in descriptors and assessments"],
+    mapInterpretation: "Engineers Ireland indicators support accreditation readiness conversations. They are provisional evidence observations until reviewed by the programme team.",
+  },
+  {
     key: "programme-owned",
     name: "Programme-Owned Frameworks",
     family: "Programme Frameworks",

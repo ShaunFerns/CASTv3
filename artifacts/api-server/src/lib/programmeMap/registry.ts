@@ -176,6 +176,16 @@ export const registryFrameworks: RegisteredFramework[] = [
     source: "registry",
   },
   {
+    key: "engineers-ireland",
+    name: "Engineers Ireland",
+    family: "professional_accreditation",
+    ownerScope: "system",
+    description: "Professional accreditation framework for engineering education programme outcomes.",
+    source: "registry",
+    versionLabel: "2021",
+    metadata: { accreditationFramework: true, professionalBody: "Engineers Ireland" },
+  },
+  {
     key: "professional-standards",
     name: "Professional Body Standards",
     family: "professional_accreditation",

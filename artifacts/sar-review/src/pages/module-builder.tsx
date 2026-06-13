@@ -234,6 +234,7 @@ const frameworkNames: Record<string, string> = {
   greencomp: "GreenComp",
   digcomp: "DigComp",
   entrecomp: "EntreComp",
+  "engineers-ireland": "Engineers Ireland",
 };
 
 const greenCompCompetencies = [
@@ -272,6 +273,9 @@ const frameworkCompetencyAreas: Record<string, Array<{ name: string; competencie
     { name: "Resources", competencies: ["Self-awareness and self-efficacy", "Motivation and perseverance", "Mobilising resources", "Financial and economic literacy", "Mobilising others"] },
     { name: "Into action", competencies: ["Taking the initiative", "Planning and management", "Coping with uncertainty, ambiguity and risk", "Working with others", "Learning through experience"] },
   ],
+  "engineers-ireland": [
+    { name: "Programme Outcomes", competencies: ["Knowledge and Understanding", "Problem Analysis", "Design", "Investigation", "Professional and Ethical Responsibilities", "Teamwork and Lifelong Learning", "Communication", "Engineering Management"] },
+  ],
 };
 
 function frameworkCatalog(key: string) {
@@ -279,7 +283,7 @@ function frameworkCatalog(key: string) {
 }
 
 function frameworkRows(detail: ModuleBuilderDetail) {
-  return ["greencomp", "digcomp", "entrecomp"].map((key) => detail.frameworkEvidenceSummary.find((framework) => framework.key === key) ?? {
+  return ["greencomp", "digcomp", "entrecomp", "engineers-ireland"].map((key) => detail.frameworkEvidenceSummary.find((framework) => framework.key === key) ?? {
     key,
     name: frameworkNames[key],
     evaluationCount: 0,
@@ -1300,7 +1304,7 @@ export default function ModuleBuilder() {
                     Provisional framework analysis links module evidence to traceable claims and map-ready evaluations. It is not an institutional finding until reviewed.
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    {["greencomp", "digcomp", "entrecomp"].map((key) => (
+                    {["greencomp", "digcomp", "entrecomp", "engineers-ireland"].map((key) => (
                       <Button
                         key={key}
                         type="button"

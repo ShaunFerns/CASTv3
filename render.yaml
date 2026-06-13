@@ -29,6 +29,7 @@ services:
       node scripts/seed-lifecomp.mjs &&
       node scripts/seed-entrecomp.mjs &&
       node scripts/seed-digcomp.mjs &&
+      node scripts/seed-engineers-ireland.mjs &&
       node scripts/seed-curriculum-design-layers.mjs
 
     startCommand: node --enable-source-maps artifacts/api-server/dist/index.mjs

@@ -423,6 +423,7 @@ export default function ProgrammeMapPage() {
     "framework:greencomp",
     "framework:digcomp",
     "framework:entrecomp",
+    "framework:engineers-ireland",
     "framework:assessment-design",
     "framework:modality-design",
   ]);
@@ -433,6 +434,7 @@ export default function ProgrammeMapPage() {
   const [lifeCompCoverage, setLifeCompCoverage] = useState<GreenCompCoverageSummary>();
   const [entreCompCoverage, setEntreCompCoverage] = useState<GreenCompCoverageSummary>();
   const [digCompCoverage, setDigCompCoverage] = useState<GreenCompCoverageSummary>();
+  const [engineersIrelandCoverage, setEngineersIrelandCoverage] = useState<GreenCompCoverageSummary>();
   const [greenCompAnalysis, setGreenCompAnalysis] = useState<FrameworkExpectationAnalysis>();
   const [assessmentDesignSummary, setAssessmentDesignSummary] = useState<DesignLayerSummary>();
   const [annotations, setAnnotations] = useState<ProgrammeMapAnnotation[]>([]);
@@ -477,6 +479,7 @@ export default function ProgrammeMapPage() {
         lifeCompCoverageResult,
         entreCompCoverageResult,
         digCompCoverageResult,
+        engineersIrelandCoverageResult,
         greenCompAnalysisResult,
         assessmentDesignResult,
         annotationResult,
@@ -490,6 +493,7 @@ export default function ProgrammeMapPage() {
         api<GreenCompCoverageSummary>(`/api/programme-map/programme-versions/${programmeVersionId}/lifecomp/coverage-summary?analysisStatus=${statusQuery}`),
         api<GreenCompCoverageSummary>(`/api/programme-map/programme-versions/${programmeVersionId}/entrecomp/coverage-summary?analysisStatus=${statusQuery}`),
         api<GreenCompCoverageSummary>(`/api/programme-map/programme-versions/${programmeVersionId}/digcomp/coverage-summary?analysisStatus=${statusQuery}`),
+        api<GreenCompCoverageSummary>(`/api/programme-map/programme-versions/${programmeVersionId}/frameworks/engineers-ireland/coverage-summary?analysisStatus=${statusQuery}`),
         api<FrameworkExpectationAnalysis>(`/api/programme-map/programme-versions/${programmeVersionId}/frameworks/greencomp/expectation-analysis?analysisStatus=${statusQuery}`),
         api<DesignLayerSummary>(`/api/programme-map/programme-versions/${programmeVersionId}/assessment-design/summary`),
         api<{ annotations: ProgrammeMapAnnotation[] }>(`/api/programme-map/programme-versions/${programmeVersionId}/annotations`),
@@ -503,6 +507,7 @@ export default function ProgrammeMapPage() {
       setLifeCompCoverage(lifeCompCoverageResult);
       setEntreCompCoverage(entreCompCoverageResult);
       setDigCompCoverage(digCompCoverageResult);
+      setEngineersIrelandCoverage(engineersIrelandCoverageResult);
       setGreenCompAnalysis(greenCompAnalysisResult);
       setAssessmentDesignSummary(assessmentDesignResult);
       setAnnotations(annotationResult.annotations);
@@ -803,6 +808,7 @@ export default function ProgrammeMapPage() {
                 <FrameworkCoveragePanel title="LifeComp Summary" summary={lifeCompCoverage} />
                 <FrameworkCoveragePanel title="EntreComp Summary" summary={entreCompCoverage} />
                 <FrameworkCoveragePanel title="DigComp Summary" summary={digCompCoverage} />
+                <FrameworkCoveragePanel title="Engineers Ireland Summary" summary={engineersIrelandCoverage} />
                 <DesignLayerPanel title="Assessment Summary" summary={assessmentDesignSummary} />
               </div>
             </TabsContent>

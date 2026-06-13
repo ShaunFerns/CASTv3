@@ -109,7 +109,7 @@ export type ClaimGenerationResponse = {
   claims: EvidenceClaimDto[];
 };
 
-export type FrameworkIntelligenceKey = "greencomp" | "digcomp" | "entrecomp";
+export type FrameworkIntelligenceKey = "greencomp" | "digcomp" | "entrecomp" | "engineers-ireland";
 
 export type GreenCompBulkGenerationScope = "module" | "programme" | "institution";
 
@@ -240,6 +240,25 @@ const frameworkClaimConfigs: Record<FrameworkIntelligenceKey, {
       { key: "coping-with-uncertainty-ambiguity-and-risk", terms: ["risk", "uncertainty", "ambiguity", "contingency", "decision"] },
       { key: "working-with-others", terms: ["team", "collaborat", "group work", "partnership", "network"] },
       { key: "learning-through-experience", terms: ["reflect", "lesson learned", "iterate", "feedback", "experience"] },
+    ],
+  },
+  "engineers-ireland": {
+    key: "engineers-ireland",
+    name: "Engineers Ireland",
+    versionLabel: "2021",
+    lensKey: "engineers-ireland-curriculum-evidence",
+    model: "deterministic-engineers-ireland-claims-v1",
+    promptKey: "engineers-ireland-evidence-claim-foundation",
+    promptName: "Engineers Ireland evidence claim foundation",
+    rules: [
+      { key: "knowledge-and-understanding", terms: ["mathematics", "science", "engineering science", "data science", "analytics", "technology"] },
+      { key: "problem-analysis", terms: ["problem", "analyse", "analyze", "formulate", "model", "engineering problem"] },
+      { key: "design", terms: ["design", "requirements", "solution", "prototype", "system", "component", "process"] },
+      { key: "investigation", terms: ["investigat", "experiment", "simulation", "data", "research", "test", "laboratory"] },
+      { key: "professional-and-ethical-responsibilities", terms: ["professional", "ethical", "sustainability", "sustainable", "safety", "risk", "environment", "equality", "diversity", "inclusion"] },
+      { key: "teamwork-and-lifelong-learning", terms: ["team", "collaborat", "lifelong learning", "cpd", "self-directed", "inclusive"] },
+      { key: "communication", terms: ["communicat", "presentation", "report", "audience", "technical paper", "defend"] },
+      { key: "engineering-management", terms: ["management", "project", "resource", "financial", "commercial", "governance", "contract"] },
     ],
   },
 };

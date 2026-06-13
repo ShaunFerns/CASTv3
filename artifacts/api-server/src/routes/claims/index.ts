@@ -50,8 +50,8 @@ function claimId(req: Request): string {
 function frameworkKey(req: Request): FrameworkIntelligenceKey {
   const value = req.params.frameworkKey;
   const resolved = Array.isArray(value) ? value[0] : value;
-  if (resolved === "greencomp" || resolved === "digcomp" || resolved === "entrecomp") return resolved;
-  throw new Error("Choose a valid framework: greencomp, digcomp or entrecomp");
+  if (resolved === "greencomp" || resolved === "digcomp" || resolved === "entrecomp" || resolved === "engineers-ireland") return resolved;
+  throw new Error("Choose a valid framework: greencomp, digcomp, entrecomp or engineers-ireland");
 }
 
 function greenCompScopeBody(body: unknown): { scope: GreenCompBulkGenerationScope; targetId?: string } {

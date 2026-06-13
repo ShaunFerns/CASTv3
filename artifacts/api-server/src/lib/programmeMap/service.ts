@@ -1336,6 +1336,10 @@ export async function getDigCompCoverageSummary(context: ActorContext, programme
   };
 }
 
+export async function getFrameworkCoverageSummaryByKey(context: ActorContext, programmeVersionId: string, frameworkKey: string, analysisStatus: AnalysisStatusFilter = "all") {
+  return getFrameworkCoverageSummaryForStatus(context, programmeVersionId, frameworkKey, defaultVersionForFramework(frameworkKey), analysisStatus);
+}
+
 export async function getFrameworkExpectationAnalysis(
   context: ActorContext,
   programmeVersionId: string,

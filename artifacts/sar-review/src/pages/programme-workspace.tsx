@@ -359,6 +359,7 @@ function frameworkLabel(key: string) {
     lifecomp: "LifeComp",
     entrecomp: "EntreComp",
     digcomp: "DigComp",
+    "engineers-ireland": "Engineers Ireland",
   };
   return labels[key] ?? key;
 }
@@ -373,11 +374,12 @@ function maturityLabel(key: string) {
   return labels[key] ?? key;
 }
 
-const frameworkVisualKeys = ["greencomp", "digcomp", "entrecomp"] as const;
+const frameworkVisualKeys = ["greencomp", "digcomp", "entrecomp", "engineers-ireland"] as const;
 const frameworkVisualColours: Record<string, string> = {
   greencomp: "#16a34a",
   digcomp: "#2563eb",
   entrecomp: "#d97706",
+  "engineers-ireland": "#be123c",
 };
 const maturityScores: Record<string, number> = {
   none: 0,
@@ -603,6 +605,9 @@ const frameworkAreaDefinitions: Record<string, Array<{ name: string; terms: stri
     { name: "Ideas and opportunities", terms: ["spotting opportunities", "creativity", "vision", "valuing ideas", "ethical"], competencies: ["Spotting opportunities", "Creativity", "Vision", "Valuing ideas", "Ethical and sustainable thinking"] },
     { name: "Resources", terms: ["self-awareness", "motivation", "mobilising resources", "financial", "mobilising others"], competencies: ["Self-awareness and self-efficacy", "Motivation and perseverance", "Mobilising resources", "Financial and economic literacy", "Mobilising others"] },
     { name: "Into action", terms: ["initiative", "planning", "uncertainty", "working with others", "learning through experience"], competencies: ["Taking the initiative", "Planning and management", "Coping with uncertainty, ambiguity and risk", "Working with others", "Learning through experience"] },
+  ],
+  "engineers-ireland": [
+    { name: "Programme Outcomes", terms: ["knowledge", "problem", "design", "investigation", "professional", "teamwork", "communication", "management"], competencies: ["Knowledge and Understanding", "Problem Analysis", "Design", "Investigation", "Professional and Ethical Responsibilities", "Teamwork and Lifelong Learning", "Communication", "Engineering Management"] },
   ],
 };
 
@@ -1178,13 +1183,14 @@ export default function ProgrammeWorkspace() {
     if (!selectedProgrammeId) return;
     const status = analysisQuery(visualAnalysisMode);
     const layerQuery = encodeURIComponent(frameworkVisualKeys.map((key) => `framework:${key}`).join(","));
-    const [greencomp, digcomp, entrecomp, projection] = await Promise.all([
-      api<FrameworkCoverageSummary>(`/api/programme-map/programme-versions/${selectedProgrammeId}/greencomp/coverage-summary?analysisStatus=${status}`),
-      api<FrameworkCoverageSummary>(`/api/programme-map/programme-versions/${selectedProgrammeId}/digcomp/coverage-summary?analysisStatus=${status}`),
-      api<FrameworkCoverageSummary>(`/api/programme-map/programme-versions/${selectedProgrammeId}/entrecomp/coverage-summary?analysisStatus=${status}`),
+    const [coverageEntries, projection] = await Promise.all([
+      Promise.all(frameworkVisualKeys.map(async (key) => [
+        key,
+        await api<FrameworkCoverageSummary>(`/api/programme-map/programme-versions/${selectedProgrammeId}/frameworks/${encodeURIComponent(key)}/coverage-summary?analysisStatus=${status}`),
+      ] as const)),
       api<ProgrammeMapVisualProjection>(`/api/programme-map/programme-versions/${selectedProgrammeId}?layers=${layerQuery}&analysisStatus=${status}`),
     ]);
-    setVisualCoverage({ greencomp, digcomp, entrecomp });
+    setVisualCoverage(Object.fromEntries(coverageEntries));
     setVisualProjection(projection);
   }
 
